@@ -254,6 +254,123 @@ app.get('/api/sales/list', async (req, res) => {
   }
 });
 
+// ── 5. Inventory Agent APIs ──────────────────────────────────────────────────
+// Initial in-memory mock fallback dataset for high availability
+let mockInventoryItems = [
+  { id: 1, outletId: 1, outletName: "Bengaluru Central", itemName: "Espresso Coffee Beans", sku: "RAW-BEANS-01", category: "Raw Materials", currentStock: 12.5, maxCapacity: 100, unit: "kg", minThreshold: 25, unitCost: 450, burnRate: 8.5, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 2, outletId: 1, outletName: "Bengaluru Central", itemName: "Whole Dairy Milk", sku: "RAW-MILK-02", category: "Dairy", currentStock: 18.0, maxCapacity: 150, unit: "Liters", minThreshold: 35, unitCost: 65, burnRate: 28.0, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 3, outletId: 1, outletName: "Bengaluru Central", itemName: "Vanilla Flavored Syrup", sku: "SYRUP-VAN-01", category: "Beverage Additives", currentStock: 8.0, maxCapacity: 30, unit: "Bottles", minThreshold: 5, unitCost: 320, burnRate: 2.1, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 4, outletId: 2, outletName: "Hyderabad Tech Park", itemName: "Eco Takeaway Cups 350ml", sku: "PKG-CUP-350", category: "Packaging", currentStock: 140, maxCapacity: 2000, unit: "Units", minThreshold: 400, unitCost: 4.5, burnRate: 210.0, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 5, outletId: 2, outletName: "Hyderabad Tech Park", itemName: "Mozzarella Cheese Blocks", sku: "RAW-CHEESE-01", category: "Dairy & Frozen", currentStock: 4.2, maxCapacity: 50, unit: "kg", minThreshold: 10, unitCost: 380, burnRate: 5.2, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 6, outletId: 3, outletName: "Chennai Marina", itemName: "Artisan Bread Flour", sku: "RAW-FLOUR-01", category: "Bakery", currentStock: 85.0, maxCapacity: 200, unit: "kg", minThreshold: 40, unitCost: 48, burnRate: 14.0, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 7, outletId: 4, outletName: "Mumbai Andheri", itemName: "Dark Chocolate Sauce", sku: "SYRUP-CHOC-02", category: "Beverage Additives", currentStock: 2.1, maxCapacity: 25, unit: "Bottles", minThreshold: 6, unitCost: 290, burnRate: 3.5, autoReorder: true, lastUpdated: new Date().toISOString() },
+  { id: 8, outletId: 5, outletName: "Pune Hinjawadi", itemName: "Paper Napkins Pack (1000s)", sku: "PKG-NAP-100", category: "Packaging", currentStock: 45, maxCapacity: 100, unit: "Packs", minThreshold: 20, unitCost: 120, burnRate: 6.0, autoReorder: true, lastUpdated: new Date().toISOString() },
+];
+
+let mockInventoryLogs = [
+  { id: 101, itemId: 1, itemName: "Espresso Coffee Beans", actionType: "stock_update", quantityChange: -3.5, triggeredBy: "POS Sensor Telemetry", notes: "Peak morning rush consumption recorded.", createdAt: new Date(Date.now() - 3600000).toISOString() },
+  { id: 102, itemId: 5, itemName: "Mozzarella Cheese Blocks", actionType: "alert", quantityChange: 0, triggeredBy: "AI Inventory Agent", notes: "Stock level (4.2 kg) reached critical threshold (< 20%).", createdAt: new Date(Date.now() - 1800000).toISOString() },
+  { id: 103, itemId: 7, itemName: "Dark Chocolate Sauce", actionType: "reorder_triggered", quantityChange: 20, triggeredBy: "AI Inventory Agent", notes: "Automated Purchase Order PO-9921 issued to Supplier ChocoCorp.", createdAt: new Date(Date.now() - 900000).toISOString() },
+];
+
+// GET /api/inventory
+app.get('/api/inventory', async (req, res) => {
+  try {
+    const { outletId, status } = req.query;
+    let items = [...mockInventoryItems];
+
+    if (outletId && outletId !== 'all') {
+      items = items.filter(item => String(item.outletId) === String(outletId));
+    }
+
+    if (status) {
+      if (status === 'critical') {
+        items = items.filter(i => (i.currentStock / i.maxCapacity) < 0.2);
+      } else if (status === 'warning') {
+        items = items.filter(i => (i.currentStock / i.maxCapacity) >= 0.2 && (i.currentStock / i.maxCapacity) < 0.4);
+      } else if (status === 'optimal') {
+        items = items.filter(i => (i.currentStock / i.maxCapacity) >= 0.4);
+      }
+    }
+
+    res.json({ items, totalCount: items.length });
+  } catch (error) {
+    console.error('Error fetching inventory:', error);
+    res.status(500).json({ error: 'Server error fetching inventory' });
+  }
+});
+
+// POST /api/inventory/update
+app.post('/api/inventory/update', async (req, res) => {
+  try {
+    const { itemId, newStock, reason, updatedBy } = req.body;
+    const item = mockInventoryItems.find(i => i.id === parseInt(itemId, 10));
+
+    if (!item) {
+      return res.status(404).json({ error: 'Inventory item not found' });
+    }
+
+    const prevStock = item.currentStock;
+    const diff = parseFloat(newStock) - prevStock;
+    item.currentStock = Math.max(0, parseFloat(newStock));
+    item.lastUpdated = new Date().toISOString();
+
+    const logEntry = {
+      id: Date.now(),
+      itemId: item.id,
+      itemName: item.itemName,
+      actionType: "stock_update",
+      quantityChange: diff,
+      triggeredBy: updatedBy || "Operator",
+      notes: reason || `Manual stock adjustment from ${prevStock} to ${item.currentStock} ${item.unit}`,
+      createdAt: new Date().toISOString()
+    };
+    mockInventoryLogs.unshift(logEntry);
+
+    res.json({ success: true, item, log: logEntry });
+  } catch (error) {
+    console.error('Error updating stock:', error);
+    res.status(500).json({ error: 'Server error updating stock' });
+  }
+});
+
+// POST /api/inventory/reorder
+app.post('/api/inventory/reorder', async (req, res) => {
+  try {
+    const { itemId, orderQty } = req.body;
+    const item = mockInventoryItems.find(i => i.id === parseInt(itemId, 10));
+
+    if (!item) {
+      return res.status(404).json({ error: 'Inventory item not found' });
+    }
+
+    const qty = orderQty ? parseFloat(orderQty) : Math.round(item.maxCapacity - item.currentStock);
+    const poNumber = `PO-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const logEntry = {
+      id: Date.now(),
+      itemId: item.id,
+      itemName: item.itemName,
+      actionType: "reorder_triggered",
+      quantityChange: qty,
+      triggeredBy: "AI Inventory Agent",
+      notes: `Automated Purchase Order ${poNumber} dispatched for ${qty} ${item.unit}. Estimated delivery: 24h.`,
+      createdAt: new Date().toISOString()
+    };
+    mockInventoryLogs.unshift(logEntry);
+
+    res.json({ success: true, poNumber, qty, item, log: logEntry });
+  } catch (error) {
+    console.error('Error triggering reorder:', error);
+    res.status(500).json({ error: 'Server error triggering reorder' });
+  }
+});
+
+// GET /api/inventory/agent-logs
+app.get('/api/inventory/agent-logs', (req, res) => {
+  res.json({ logs: mockInventoryLogs });
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
