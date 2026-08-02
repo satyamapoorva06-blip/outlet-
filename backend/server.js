@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -8,67 +8,25 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'franchiseops_super_secret_jwt_key_2026';
+const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.biidbeycggaggvaicnlr:BEdVIdulemlQs33B@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres"
-});
-
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Error acquiring PostgreSQL client:', err.stack);
-  } else {
-    console.log('Successfully connected to PostgreSQL database');
-    release();
-  }
-});
+// Test DB connection on startup
+prisma.$connect()
+  .then(() => console.log('Successfully connected to SQLite database'))
+  .catch(err => console.error('Database connection failed:', err));
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
+  if (!token) return res.status(401).json({ error: 'Access token required' });
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
+    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
     req.user = user;
     next();
   });
-};
-
-const getFilters = (query) => {
-  const { outletId, startDate, endDate } = query;
-  const conditions = [];
-  const values = [];
-  let paramIndex = 1;
-
-  if (outletId && outletId !== 'all') {
-    conditions.push(`outlet_id = $${paramIndex}`);
-    values.push(parseInt(outletId, 10));
-    paramIndex++;
-  }
-
-  if (startDate) {
-    conditions.push(`sale_date >= $${paramIndex}`);
-    values.push(startDate);
-    paramIndex++;
-  }
-
-  if (endDate) {
-    conditions.push(`sale_date <= $${paramIndex}`);
-    values.push(endDate);
-    paramIndex++;
-  }
-
-  return {
-    whereClause: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
-    values
-  };
 };
 
 // ==========================================
@@ -80,28 +38,23 @@ app.post('/api/auth/signup', async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
+    const existing = await prisma.users.findUnique({ where: { email: email.toLowerCase() } });
+    if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
 
-    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'An account with this email already exists' });
-    }
+    const password_hash = await bcrypt.hash(password, 10);
+    const user = await prisma.users.create({
+      data: {
+        name,
+        email: email.toLowerCase(),
+        password_hash,
+        role: role.toUpperCase(),
+        outlet_id: outletId ? parseInt(outletId, 10) : null
+      }
+    });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      `INSERT INTO users (name, email, password_hash, role, outlet_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, role, outlet_id, created_at`,
-      [name, email.toLowerCase(), hashedPassword, role.toUpperCase(), outletId ? parseInt(outletId, 10) : null]
-    );
-
-    const user = result.rows[0];
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, outlet_id: user.outlet_id },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({ message: 'Account created successfully', token, user });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, outlet_id: user.outlet_id }, JWT_SECRET, { expiresIn: '7d' });
+    const { password_hash: _, ...safeUser } = user;
+    res.status(201).json({ message: 'Account created successfully', token, user: safeUser });
   } catch (error) {
     console.error('Error during signup:', error);
     res.status(500).json({ error: 'Server error creating account' });
@@ -111,36 +64,26 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
-    const result = await pool.query(
-      `SELECT u.id, u.name, u.email, u.password_hash, u.role, u.outlet_id, o.outlet_name, o.city
-       FROM users u
-       LEFT JOIN outlets o ON u.outlet_id = o.id
-       WHERE u.email = $1`,
-      [email.toLowerCase()]
-    );
+    const user = await prisma.users.findUnique({
+      where: { email: email.toLowerCase() },
+      include: { outlets: { select: { outlet_name: true, city: true } } }
+    });
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const user = result.rows[0];
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
-    if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!passwordMatch) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, outlet_id: user.outlet_id },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    delete user.password_hash;
-    res.json({ message: 'Login successful', token, user });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, outlet_id: user.outlet_id }, JWT_SECRET, { expiresIn: '7d' });
+    const { password_hash, ...safeUser } = user;
+    const responseUser = {
+      ...safeUser,
+      outlet_name: user.outlets?.outlet_name || null,
+      city: user.outlets?.city || null,
+    };
+    res.json({ message: 'Login successful', token, user: responseUser });
   } catch (error) {
     console.error('Error during login:', error);
     res.status(500).json({ error: 'Server error authenticating user' });
@@ -149,19 +92,13 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT u.id, u.name, u.email, u.role, u.outlet_id, o.outlet_name, o.city
-       FROM users u
-       LEFT JOIN outlets o ON u.outlet_id = o.id
-       WHERE u.id = $1`,
-      [req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(result.rows[0]);
+    const user = await prisma.users.findUnique({
+      where: { id: req.user.id },
+      include: { outlets: { select: { outlet_name: true, city: true } } }
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { password_hash, ...safeUser } = user;
+    res.json({ ...safeUser, outlet_name: user.outlets?.outlet_name, city: user.outlets?.city });
   } catch (error) {
     console.error('Error fetching user profile:', error);
     res.status(500).json({ error: 'Server error fetching user profile' });
@@ -169,12 +106,12 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 2. OUTLET PERFORMANCE, HEALTH SCORE & MAP COMPARISON ENDPOINTS
+// 2. OUTLETS ENDPOINTS
 // ==========================================
 app.get('/api/outlets', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM outlets WHERE is_active = true ORDER BY id');
-    res.json(result.rows);
+    const outlets = await prisma.outlets.findMany({ where: { is_active: true }, orderBy: { id: 'asc' } });
+    res.json(outlets);
   } catch (error) {
     console.error('Error fetching outlets:', error);
     res.status(500).json({ error: 'Server error fetching outlets' });
@@ -183,74 +120,36 @@ app.get('/api/outlets', async (req, res) => {
 
 app.get('/api/outlets/locations', authenticateToken, async (req, res) => {
   try {
-    const queryText = `
-      SELECT 
-        o.id,
-        o.outlet_name,
-        o.manager_name,
-        o.address,
-        o.city,
-        o.state,
-        o.latitude,
-        o.longitude,
-        COALESCE(SUM(s.gross_revenue), 0) as total_revenue,
-        COALESCE(SUM(s.net_profit), 0) as total_profit,
-        COALESCE(SUM(s.total_orders), 0) as total_orders,
-        COALESCE(AVG(s.average_order_value), 0) as avg_aov,
-        (SELECT COUNT(*) FROM inventory i WHERE i.outlet_id = o.id AND i.status IN ('Low Stock', 'Critical')) as stock_alerts,
-        (SELECT COUNT(*) FROM staff st WHERE st.outlet_id = o.id AND st.status = 'Active') as staff_count
-      FROM outlets o
-      LEFT JOIN sales s ON o.id = s.outlet_id
-      WHERE o.is_active = true
-      GROUP BY o.id
-      ORDER BY o.id
-    `;
-    const result = await pool.query(queryText);
-
-    const locations = result.rows.map(row => {
-      const revenue = parseFloat(row.total_revenue);
-      const profit = parseFloat(row.total_profit);
-      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-      const stockAlerts = parseInt(row.stock_alerts, 10);
-
-      let score = 50;
-      if (margin >= 35) score += 25;
-      else if (margin >= 25) score += 18;
-      else if (margin >= 15) score += 10;
-
-      if (revenue > 1000000) score += 20;
-      else if (revenue > 700000) score += 14;
-      else score += 8;
-
-      if (stockAlerts === 0) score += 15;
-      else if (stockAlerts <= 2) score += 8;
-
-      const healthScore = Math.min(100, Math.round(score));
-      const statusTag = healthScore >= 80 ? 'Optimal' : healthScore >= 65 ? 'Healthy' : healthScore >= 50 ? 'Warning' : 'Critical';
-
-      return {
-        id: row.id,
-        name: row.outlet_name,
-        manager: row.manager_name,
-        address: row.address,
-        city: row.city,
-        state: row.state,
-        latitude: parseFloat(row.latitude),
-        longitude: parseFloat(row.longitude),
-        metrics: {
-          revenue,
-          profit,
-          orders: parseInt(row.total_orders, 10),
-          avgAov: parseFloat(row.avg_aov).toFixed(2),
-          profitMargin: margin.toFixed(1),
-          stockAlerts,
-          staffCount: parseInt(row.staff_count, 10)
-        },
-        healthScore,
-        statusTag
-      };
+    const outlets = await prisma.outlets.findMany({
+      where: { is_active: true },
+      include: {
+        sales: { select: { gross_revenue: true, net_profit: true, total_orders: true, average_order_value: true } },
+        inventory: { where: { status: { in: ['Low Stock', 'Critical'] } }, select: { id: true } },
+        staff: { where: { status: 'Active' }, select: { id: true } }
+      },
+      orderBy: { id: 'asc' }
     });
 
+    const locations = outlets.map(o => {
+      const revenue = o.sales.reduce((s, r) => s + r.gross_revenue, 0);
+      const profit = o.sales.reduce((s, r) => s + r.net_profit, 0);
+      const orders = o.sales.reduce((s, r) => s + r.total_orders, 0);
+      const avgAov = o.sales.length > 0 ? o.sales.reduce((s, r) => s + r.average_order_value, 0) / o.sales.length : 0;
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+      const stockAlerts = o.inventory.length;
+      let score = 50;
+      if (margin >= 35) score += 25; else if (margin >= 25) score += 18; else if (margin >= 15) score += 10;
+      if (revenue > 1000000) score += 20; else if (revenue > 700000) score += 14; else score += 8;
+      if (stockAlerts === 0) score += 15; else if (stockAlerts <= 2) score += 8;
+      const healthScore = Math.min(100, Math.round(score));
+      const statusTag = healthScore >= 80 ? 'Optimal' : healthScore >= 65 ? 'Healthy' : healthScore >= 50 ? 'Warning' : 'Critical';
+      return {
+        id: o.id, name: o.outlet_name, manager: o.manager_name, address: o.address,
+        city: o.city, state: o.state, latitude: o.latitude, longitude: o.longitude,
+        metrics: { revenue, profit, orders, avgAov: avgAov.toFixed(2), profitMargin: margin.toFixed(1), stockAlerts, staffCount: o.staff.length },
+        healthScore, statusTag
+      };
+    });
     res.json(locations);
   } catch (error) {
     console.error('Error fetching location map data:', error);
@@ -260,68 +159,31 @@ app.get('/api/outlets/locations', authenticateToken, async (req, res) => {
 
 app.get('/api/outlets/health-scores', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT 
-        o.id,
-        o.outlet_name,
-        o.city,
-        COALESCE(SUM(s.gross_revenue), 0) as total_revenue,
-        COALESCE(SUM(s.operating_cost), 0) as total_cost,
-        COALESCE(SUM(s.net_profit), 0) as total_profit,
-        COALESCE(SUM(s.total_orders), 0) as total_orders,
-        COALESCE(AVG(s.average_order_value), 0) as avg_aov,
-        (SELECT COUNT(*) FROM inventory i WHERE i.outlet_id = o.id AND i.status IN ('Low Stock', 'Critical')) as stock_issues,
-        (SELECT COALESCE(AVG(st.performance_rating), 4.0) FROM staff st WHERE st.outlet_id = o.id) as avg_staff_rating
-      FROM outlets o
-      LEFT JOIN sales s ON o.id = s.outlet_id
-      WHERE o.is_active = true
-      GROUP BY o.id
-    `);
-
-    const healthScores = result.rows.map(row => {
-      const revenue = parseFloat(row.total_revenue);
-      const profit = parseFloat(row.total_profit);
-      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-      const stockIssues = parseInt(row.stock_issues, 10);
-      const staffRating = parseFloat(row.avg_staff_rating);
-
-      let finScore = Math.min(40, Math.max(0, (margin / 45) * 40));
-      let revScore = Math.min(20, Math.max(0, (revenue / 1500000) * 20));
-      let invScore = Math.max(0, 20 - stockIssues * 6);
-      let stfScore = Math.min(20, Math.max(0, ((staffRating - 3.0) / 2.0) * 20));
-
-      const totalScore = Math.round(finScore + revScore + invScore + stfScore);
-      
-      let badge = 'Optimal';
-      let badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      if (totalScore < 55) {
-        badge = 'Underperforming';
-        badgeColor = 'bg-red-100 text-red-800 border-red-300';
-      } else if (totalScore < 75) {
-        badge = 'Needs Attention';
-        badgeColor = 'bg-amber-100 text-amber-800 border-amber-300';
-      } else if (totalScore < 88) {
-        badge = 'Healthy';
-        badgeColor = 'bg-blue-100 text-blue-800 border-blue-300';
+    const outlets = await prisma.outlets.findMany({
+      where: { is_active: true },
+      include: {
+        sales: { select: { gross_revenue: true, operating_cost: true, net_profit: true, total_orders: true, average_order_value: true } },
+        inventory: { where: { status: { in: ['Low Stock', 'Critical'] } }, select: { id: true } },
+        staff: { select: { performance_rating: true } }
       }
-
-      return {
-        outletId: row.id,
-        outletName: row.outlet_name,
-        city: row.city,
-        healthScore: totalScore,
-        badge,
-        badgeColor,
-        metrics: {
-          grossRevenue: revenue,
-          netProfit: profit,
-          profitMargin: parseFloat(margin.toFixed(1)),
-          stockIssues,
-          staffRating: parseFloat(staffRating.toFixed(2))
-        }
-      };
     });
-
+    const healthScores = outlets.map(o => {
+      const revenue = o.sales.reduce((s, r) => s + r.gross_revenue, 0);
+      const profit = o.sales.reduce((s, r) => s + r.net_profit, 0);
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+      const stockIssues = o.inventory.length;
+      const staffRating = o.staff.length > 0 ? o.staff.reduce((s, r) => s + r.performance_rating, 0) / o.staff.length : 4.0;
+      const finScore = Math.min(40, Math.max(0, (margin / 45) * 40));
+      const revScore = Math.min(20, Math.max(0, (revenue / 1500000) * 20));
+      const invScore = Math.max(0, 20 - stockIssues * 6);
+      const stfScore = Math.min(20, Math.max(0, ((staffRating - 3.0) / 2.0) * 20));
+      const totalScore = Math.round(finScore + revScore + invScore + stfScore);
+      let badge = 'Optimal', badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      if (totalScore < 55) { badge = 'Underperforming'; badgeColor = 'bg-red-100 text-red-800 border-red-300'; }
+      else if (totalScore < 75) { badge = 'Needs Attention'; badgeColor = 'bg-amber-100 text-amber-800 border-amber-300'; }
+      else if (totalScore < 88) { badge = 'Healthy'; badgeColor = 'bg-blue-100 text-blue-800 border-blue-300'; }
+      return { outletId: o.id, outletName: o.outlet_name, city: o.city, healthScore: totalScore, badge, badgeColor, metrics: { grossRevenue: revenue, netProfit: profit, profitMargin: parseFloat(margin.toFixed(1)), stockIssues, staffRating: parseFloat(staffRating.toFixed(2)) } };
+    });
     healthScores.sort((a, b) => b.healthScore - a.healthScore);
     res.json(healthScores);
   } catch (error) {
@@ -332,65 +194,31 @@ app.get('/api/outlets/health-scores', authenticateToken, async (req, res) => {
 
 app.get('/api/outlets/underperforming', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT 
-        o.id,
-        o.outlet_name,
-        o.city,
-        o.manager_name,
-        COALESCE(SUM(s.gross_revenue), 0) as total_revenue,
-        COALESCE(SUM(s.operating_cost), 0) as total_cost,
-        COALESCE(SUM(s.net_profit), 0) as total_profit,
-        COALESCE(SUM(s.total_orders), 0) as total_orders,
-        COALESCE(AVG(s.average_order_value), 0) as avg_aov,
-        (SELECT COUNT(*) FROM inventory i WHERE i.outlet_id = o.id AND i.status IN ('Low Stock', 'Critical')) as stock_alerts,
-        (SELECT COALESCE(AVG(st.performance_rating), 4.0) FROM staff st WHERE st.outlet_id = o.id) as avg_staff_rating
-      FROM outlets o
-      LEFT JOIN sales s ON o.id = s.outlet_id
-      WHERE o.is_active = true
-      GROUP BY o.id
-    `);
-
-    const underperformingStores = [];
-    result.rows.forEach(row => {
-      const revenue = parseFloat(row.total_revenue);
-      const profit = parseFloat(row.total_profit);
-      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-      const stockAlerts = parseInt(row.stock_alerts, 10);
-      const staffRating = parseFloat(row.avg_staff_rating);
-
-      const issues = [];
-      if (margin < 25) issues.push(`High operating cost ratio (${(100 - margin).toFixed(1)}% cost burden)`);
-      if (revenue < 800000) issues.push(`Low sales volume relative to network baseline`);
-      if (stockAlerts > 0) issues.push(`${stockAlerts} inventory stockout alerts active`);
-      if (staffRating < 4.0) issues.push(`Staff efficiency rating below threshold (${staffRating.toFixed(1)}/5.0)`);
-
-      if (issues.length >= 2 || margin < 25) {
-        underperformingStores.push({
-          outletId: row.id,
-          outletName: row.outlet_name,
-          city: row.city,
-          manager: row.manager_name,
-          metrics: {
-            revenue,
-            profit,
-            profitMargin: margin.toFixed(1),
-            orders: parseInt(row.total_orders, 10),
-            stockAlerts,
-            staffRating: staffRating.toFixed(1)
-          },
-          primaryDiagnostic: issues[0] || 'Sub-optimal operational performance',
-          allIssues: issues,
-          actionPlan: [
-            "Audit vendor supply contracts to lower raw material cost percentage by 4-6%",
-            "Realign staff scheduling to match customer footfall peak hours",
-            "Restock critical inventory items to eliminate order cancellations",
-            "Launch targeted hyper-local marketing campaign to boost weekday order volume"
-          ]
-        });
+    const outlets = await prisma.outlets.findMany({
+      where: { is_active: true },
+      include: {
+        sales: { select: { gross_revenue: true, operating_cost: true, net_profit: true, total_orders: true, average_order_value: true } },
+        inventory: { where: { status: { in: ['Low Stock', 'Critical'] } }, select: { id: true } },
+        staff: { select: { performance_rating: true } }
       }
     });
-
+    const underperformingStores = [];
+    outlets.forEach(o => {
+      const revenue = o.sales.reduce((s, r) => s + r.gross_revenue, 0);
+      const profit = o.sales.reduce((s, r) => s + r.net_profit, 0);
+      const orders = o.sales.reduce((s, r) => s + r.total_orders, 0);
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+      const stockAlerts = o.inventory.length;
+      const staffRating = o.staff.length > 0 ? o.staff.reduce((s, r) => s + r.performance_rating, 0) / o.staff.length : 4.0;
+      const issues = [];
+      if (margin < 25) issues.push(`High operating cost ratio (${(100 - margin).toFixed(1)}% cost burden)`);
+      if (revenue < 800000) issues.push('Low sales volume relative to network baseline');
+      if (stockAlerts > 0) issues.push(`${stockAlerts} inventory stockout alerts active`);
+      if (staffRating < 4.0) issues.push(`Staff efficiency rating below threshold (${staffRating.toFixed(1)}/5.0)`);
+      if (issues.length >= 2 || margin < 25) {
+        underperformingStores.push({ outletId: o.id, outletName: o.outlet_name, city: o.city, manager: o.manager_name, metrics: { revenue, profit, profitMargin: margin.toFixed(1), orders, stockAlerts, staffRating: staffRating.toFixed(1) }, primaryDiagnostic: issues[0] || 'Sub-optimal operational performance', allIssues: issues, actionPlan: ["Audit vendor supply contracts to lower raw material cost percentage by 4-6%", "Realign staff scheduling to match customer footfall peak hours", "Restock critical inventory items to eliminate order cancellations", "Launch targeted hyper-local marketing campaign to boost weekday order volume"] });
+      }
+    });
     res.json(underperformingStores);
   } catch (error) {
     console.error('Error fetching underperforming stores:', error);
@@ -401,71 +229,29 @@ app.get('/api/outlets/underperforming', authenticateToken, async (req, res) => {
 app.get('/api/outlets/compare', authenticateToken, async (req, res) => {
   try {
     const { ids } = req.query;
-    if (!ids) {
-      return res.status(400).json({ error: 'Parameter "ids" (comma separated outlet IDs) is required' });
-    }
-
+    if (!ids) return res.status(400).json({ error: 'Parameter "ids" is required' });
     const idList = ids.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
-
-    const result = await pool.query(
-      `SELECT 
-        o.id,
-        o.outlet_name,
-        o.city,
-        o.manager_name,
-        o.latitude,
-        o.longitude,
-        COALESCE(SUM(s.gross_revenue), 0) as gross_revenue,
-        COALESCE(SUM(s.operating_cost), 0) as operating_cost,
-        COALESCE(SUM(s.net_profit), 0) as net_profit,
-        COALESCE(SUM(s.total_orders), 0) as total_orders,
-        COALESCE(AVG(s.average_order_value), 0) as avg_aov,
-        COALESCE(SUM(s.payment_upi), 0) as upi_sales,
-        COALESCE(SUM(s.payment_card), 0) as card_sales,
-        COALESCE(SUM(s.payment_cash), 0) as cash_sales,
-        (SELECT COUNT(*) FROM inventory i WHERE i.outlet_id = o.id AND i.status IN ('Low Stock', 'Critical')) as stock_issues,
-        (SELECT COUNT(*) FROM staff st WHERE st.outlet_id = o.id AND st.status = 'Active') as staff_count,
-        (SELECT COALESCE(AVG(st.performance_rating), 4.0) FROM staff st WHERE st.outlet_id = o.id) as avg_staff_rating
-       FROM outlets o
-       LEFT JOIN sales s ON o.id = s.outlet_id
-       WHERE o.id = ANY($1::int[])
-       GROUP BY o.id`,
-      [idList]
-    );
-
-    const comparisonData = result.rows.map(row => {
-      const revenue = parseFloat(row.gross_revenue);
-      const profit = parseFloat(row.net_profit);
-      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-
-      return {
-        id: row.id,
-        outletName: row.outlet_name,
-        city: row.city,
-        manager: row.manager_name,
-        latitude: parseFloat(row.latitude),
-        longitude: parseFloat(row.longitude),
-        financials: {
-          grossRevenue: revenue,
-          operatingCost: parseFloat(row.operating_cost),
-          netProfit: profit,
-          profitMargin: parseFloat(margin.toFixed(2)),
-          totalOrders: parseInt(row.total_orders, 10),
-          averageOrderValue: parseFloat(row.avg_aov).toFixed(2),
-          paymentSplit: {
-            upi: parseFloat(row.upi_sales),
-            card: parseFloat(row.card_sales),
-            cash: parseFloat(row.cash_sales)
-          }
-        },
-        operations: {
-          stockIssues: parseInt(row.stock_issues, 10),
-          staffCount: parseInt(row.staff_count, 10),
-          staffRating: parseFloat(row.avg_staff_rating).toFixed(1)
-        }
-      };
+    const outlets = await prisma.outlets.findMany({
+      where: { id: { in: idList } },
+      include: {
+        sales: true,
+        inventory: { where: { status: { in: ['Low Stock', 'Critical'] } }, select: { id: true } },
+        staff: { select: { id: true, performance_rating: true } }
+      }
     });
-
+    const comparisonData = outlets.map(o => {
+      const revenue = o.sales.reduce((s, r) => s + r.gross_revenue, 0);
+      const cost = o.sales.reduce((s, r) => s + r.operating_cost, 0);
+      const profit = o.sales.reduce((s, r) => s + r.net_profit, 0);
+      const orders = o.sales.reduce((s, r) => s + r.total_orders, 0);
+      const avgAov = o.sales.length > 0 ? o.sales.reduce((s, r) => s + r.average_order_value, 0) / o.sales.length : 0;
+      const upi = o.sales.reduce((s, r) => s + r.payment_upi, 0);
+      const card = o.sales.reduce((s, r) => s + r.payment_card, 0);
+      const cash = o.sales.reduce((s, r) => s + r.payment_cash, 0);
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+      const staffRating = o.staff.length > 0 ? o.staff.reduce((s, r) => s + r.performance_rating, 0) / o.staff.length : 4.0;
+      return { id: o.id, outletName: o.outlet_name, city: o.city, manager: o.manager_name, latitude: o.latitude, longitude: o.longitude, financials: { grossRevenue: revenue, operatingCost: cost, netProfit: profit, profitMargin: parseFloat(margin.toFixed(2)), totalOrders: orders, averageOrderValue: avgAov.toFixed(2), paymentSplit: { upi, card, cash } }, operations: { stockIssues: o.inventory.length, staffCount: o.staff.length, staffRating: staffRating.toFixed(1) } };
+    });
     res.json(comparisonData);
   } catch (error) {
     console.error('Error fetching outlet comparison:', error);
@@ -473,49 +259,36 @@ app.get('/api/outlets/compare', authenticateToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// 3. SALES ENDPOINTS
+// ==========================================
+function buildSalesWhere(query) {
+  const { outletId, startDate, endDate } = query;
+  const where = {};
+  if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+  if (startDate || endDate) {
+    where.sale_date = {};
+    if (startDate) where.sale_date.gte = startDate;
+    if (endDate) where.sale_date.lte = endDate;
+  }
+  return where;
+}
+
 app.get('/api/sales/summary', authenticateToken, async (req, res) => {
   try {
-    const { whereClause, values } = getFilters(req.query);
-
-    const queryText = `
-      SELECT 
-        COALESCE(SUM(gross_revenue), 0) as total_revenue,
-        COALESCE(SUM(operating_cost), 0) as total_cost,
-        COALESCE(SUM(net_profit), 0) as total_profit,
-        COALESCE(SUM(total_orders), 0) as total_orders,
-        COALESCE(SUM(customer_count), 0) as total_customers,
-        COALESCE(SUM(payment_cash), 0) as payment_cash,
-        COALESCE(SUM(payment_card), 0) as payment_card,
-        COALESCE(SUM(payment_upi), 0) as payment_upi
-      FROM sales
-      ${whereClause}
-    `;
-
-    const result = await pool.query(queryText, values);
-    const summary = result.rows[0];
-
-    const totalOrders = parseFloat(summary.total_orders);
-    const totalRevenue = parseFloat(summary.total_revenue);
-    const totalCost = parseFloat(summary.total_cost);
-    const totalProfit = parseFloat(summary.total_profit);
-
+    const where = buildSalesWhere(req.query);
+    const sales = await prisma.sales.findMany({ where });
+    const totalOrders = sales.reduce((s, r) => s + r.total_orders, 0);
+    const totalRevenue = sales.reduce((s, r) => s + r.gross_revenue, 0);
+    const totalCost = sales.reduce((s, r) => s + r.operating_cost, 0);
+    const totalProfit = sales.reduce((s, r) => s + r.net_profit, 0);
+    const totalCustomers = sales.reduce((s, r) => s + r.customer_count, 0);
+    const paymentCash = sales.reduce((s, r) => s + r.payment_cash, 0);
+    const paymentCard = sales.reduce((s, r) => s + r.payment_card, 0);
+    const paymentUpi = sales.reduce((s, r) => s + r.payment_upi, 0);
     const avgOrderValue = totalOrders > 0 ? parseFloat((totalRevenue / totalOrders).toFixed(2)) : 0;
     const profitMargin = totalRevenue > 0 ? parseFloat(((totalProfit / totalRevenue) * 100).toFixed(2)) : 0;
-
-    res.json({
-      grossRevenue: totalRevenue,
-      operatingCost: totalCost,
-      netProfit: totalProfit,
-      totalOrders: totalOrders,
-      totalCustomers: parseInt(summary.total_customers, 10),
-      averageOrderValue: avgOrderValue,
-      profitMargin: profitMargin,
-      paymentSplit: {
-        cash: parseFloat(summary.payment_cash),
-        card: parseFloat(summary.payment_card),
-        upi: parseFloat(summary.payment_upi)
-      }
-    });
+    res.json({ grossRevenue: totalRevenue, operatingCost: totalCost, netProfit: totalProfit, totalOrders, totalCustomers, averageOrderValue: avgOrderValue, profitMargin, paymentSplit: { cash: paymentCash, card: paymentCard, upi: paymentUpi } });
   } catch (error) {
     console.error('Error fetching sales summary:', error);
     res.status(500).json({ error: 'Server error fetching sales summary' });
@@ -524,32 +297,19 @@ app.get('/api/sales/summary', authenticateToken, async (req, res) => {
 
 app.get('/api/sales/trends', authenticateToken, async (req, res) => {
   try {
-    const { whereClause, values } = getFilters(req.query);
-
-    const queryText = `
-      SELECT 
-        sale_date,
-        COALESCE(SUM(gross_revenue), 0) as gross_revenue,
-        COALESCE(SUM(operating_cost), 0) as operating_cost,
-        COALESCE(SUM(net_profit), 0) as net_profit,
-        COALESCE(SUM(total_orders), 0) as total_orders
-      FROM sales
-      ${whereClause}
-      GROUP BY sale_date
-      ORDER BY sale_date ASC
-    `;
-
-    const result = await pool.query(queryText, values);
-    
-    const trends = result.rows.map(row => ({
-      date: new Date(row.sale_date).toISOString().slice(0, 10),
-      grossRevenue: parseFloat(row.gross_revenue),
-      operatingCost: parseFloat(row.operating_cost),
-      netProfit: parseFloat(row.net_profit),
-      totalOrders: parseInt(row.total_orders, 10)
-    }));
-
-    res.json(trends);
+    const where = buildSalesWhere(req.query);
+    const sales = await prisma.sales.findMany({ where, orderBy: { sale_date: 'asc' } });
+    // Group by date
+    const byDate = {};
+    for (const r of sales) {
+      const d = r.sale_date.slice(0, 10);
+      if (!byDate[d]) byDate[d] = { date: d, grossRevenue: 0, operatingCost: 0, netProfit: 0, totalOrders: 0 };
+      byDate[d].grossRevenue += r.gross_revenue;
+      byDate[d].operatingCost += r.operating_cost;
+      byDate[d].netProfit += r.net_profit;
+      byDate[d].totalOrders += r.total_orders;
+    }
+    res.json(Object.values(byDate));
   } catch (error) {
     console.error('Error fetching sales trends:', error);
     res.status(500).json({ error: 'Server error fetching sales trends' });
@@ -558,84 +318,18 @@ app.get('/api/sales/trends', authenticateToken, async (req, res) => {
 
 app.get('/api/sales/list', authenticateToken, async (req, res) => {
   try {
-    const { outletId, startDate, endDate, limit = 50, offset = 0 } = req.query;
-    
-    const conditions = [];
-    const values = [];
-    let paramIndex = 1;
-
-    if (outletId && outletId !== 'all') {
-      conditions.push(`s.outlet_id = $${paramIndex}`);
-      values.push(parseInt(outletId, 10));
-      paramIndex++;
-    }
-
-    if (startDate) {
-      conditions.push(`s.sale_date >= $${paramIndex}`);
-      values.push(startDate);
-      paramIndex++;
-    }
-
-    if (endDate) {
-      conditions.push(`s.sale_date <= $${paramIndex}`);
-      values.push(endDate);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    
-    const countQuery = `SELECT COUNT(*) as total FROM sales s ${whereClause}`;
-    const countRes = await pool.query(countQuery, values);
-    const totalCount = parseInt(countRes.rows[0].total, 10);
-
-    const listQuery = `
-      SELECT 
-        s.id,
-        s.outlet_id,
-        o.outlet_name,
-        o.city,
-        s.sale_date,
-        s.total_orders,
-        s.customer_count,
-        s.gross_revenue,
-        s.operating_cost,
-        s.net_profit,
-        s.average_order_value,
-        s.payment_cash,
-        s.payment_card,
-        s.payment_upi
-      FROM sales s
-      JOIN outlets o ON s.outlet_id = o.id
-      ${whereClause}
-      ORDER BY s.sale_date DESC, o.outlet_name ASC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `;
-
-    const limitVal = parseInt(limit, 10);
-    const offsetVal = parseInt(offset, 10);
-
-    const result = await pool.query(listQuery, [...values, limitVal, offsetVal]);
-    
-    const records = result.rows.map(row => ({
-      id: row.id,
-      outletId: row.outlet_id,
-      outletName: row.outlet_name,
-      city: row.city,
-      saleDate: new Date(row.sale_date).toISOString().slice(0, 10),
-      totalOrders: parseInt(row.total_orders, 10),
-      customerCount: parseInt(row.customer_count, 10),
-      grossRevenue: parseFloat(row.gross_revenue),
-      operatingCost: parseFloat(row.operating_cost),
-      netProfit: parseFloat(row.net_profit),
-      averageOrderValue: parseFloat(row.average_order_value),
-      paymentSplit: {
-        cash: parseFloat(row.payment_cash),
-        card: parseFloat(row.payment_card),
-        upi: parseFloat(row.payment_upi)
-      }
-    }));
-
-    res.json({ records, pagination: { total: totalCount, limit: limitVal, offset: offsetVal } });
+    const { limit = 50, offset = 0 } = req.query;
+    const where = buildSalesWhere(req.query);
+    const totalCount = await prisma.sales.count({ where });
+    const rows = await prisma.sales.findMany({
+      where,
+      include: { outlets: { select: { outlet_name: true, city: true } } },
+      orderBy: [{ sale_date: 'desc' }],
+      take: parseInt(limit, 10),
+      skip: parseInt(offset, 10)
+    });
+    const records = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, saleDate: r.sale_date.slice(0, 10), totalOrders: r.total_orders, customerCount: r.customer_count, grossRevenue: r.gross_revenue, operatingCost: r.operating_cost, netProfit: r.net_profit, averageOrderValue: r.average_order_value, paymentSplit: { cash: r.payment_cash, card: r.payment_card, upi: r.payment_upi } }));
+    res.json({ records, pagination: { total: totalCount, limit: parseInt(limit, 10), offset: parseInt(offset, 10) } });
   } catch (error) {
     console.error('Error fetching sales list:', error);
     res.status(500).json({ error: 'Server error fetching sales list' });
@@ -643,76 +337,27 @@ app.get('/api/sales/list', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 3. STOCK INVENTORY AGENT ENDPOINTS
+// 4. INVENTORY ENDPOINTS
 // ==========================================
 app.get('/api/inventory', authenticateToken, async (req, res) => {
   try {
     const { outletId, category, status } = req.query;
-    const conditions = [];
-    const values = [];
-    let paramIndex = 1;
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+    if (category && category !== 'all') where.category = category;
+    if (status && status !== 'all') where.status = status;
 
-    if (outletId && outletId !== 'all') {
-      conditions.push(`i.outlet_id = $${paramIndex}`);
-      values.push(parseInt(outletId, 10));
-      paramIndex++;
-    }
+    const rows = await prisma.inventory.findMany({
+      where,
+      include: { outlets: { select: { outlet_name: true, city: true } } },
+      orderBy: [{ status: 'asc' }, { item_name: 'asc' }]
+    });
 
-    if (category && category !== 'all') {
-      conditions.push(`i.category = $${paramIndex}`);
-      values.push(category);
-      paramIndex++;
-    }
+    // Sort by status priority
+    const statusOrder = { 'Critical': 1, 'Low Stock': 2, 'In Stock': 3 };
+    rows.sort((a, b) => (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3));
 
-    if (status && status !== 'all') {
-      conditions.push(`i.status = $${paramIndex}`);
-      values.push(status);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const queryText = `
-      SELECT 
-        i.id,
-        i.outlet_id,
-        o.outlet_name,
-        o.city,
-        i.item_name,
-        i.category,
-        i.current_stock,
-        i.min_threshold,
-        i.max_capacity,
-        i.unit,
-        i.unit_price,
-        i.status,
-        i.last_restocked
-      FROM inventory i
-      JOIN outlets o ON i.outlet_id = o.id
-      ${whereClause}
-      ORDER BY 
-        CASE WHEN i.status = 'Critical' THEN 1 WHEN i.status = 'Low Stock' THEN 2 ELSE 3 END,
-        i.item_name ASC
-    `;
-
-    const result = await pool.query(queryText, values);
-
-    const items = result.rows.map(r => ({
-      id: r.id,
-      outletId: r.outlet_id,
-      outletName: r.outlet_name,
-      city: r.city,
-      itemName: r.item_name,
-      category: r.category,
-      currentStock: parseFloat(r.current_stock),
-      minThreshold: parseFloat(r.min_threshold),
-      maxCapacity: parseFloat(r.max_capacity),
-      unit: r.unit,
-      unitPrice: parseFloat(r.unit_price),
-      status: r.status,
-      lastRestocked: r.last_restocked ? new Date(r.last_restocked).toISOString().slice(0, 10) : null
-    }));
-
+    const items = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: r.current_stock, minThreshold: r.min_threshold, maxCapacity: r.max_capacity, unit: r.unit, unitPrice: r.unit_price, status: r.status, lastRestocked: r.last_restocked || null }));
     res.json(items);
   } catch (error) {
     console.error('Error fetching inventory:', error);
@@ -722,78 +367,28 @@ app.get('/api/inventory', authenticateToken, async (req, res) => {
 
 app.get('/api/inventory/agent-insights', authenticateToken, async (req, res) => {
   try {
-    const { outletId } = req.query;
-    const { whereClause, values } = getFilters(req.query);
+    const where = {};
+    if (req.query.outletId && req.query.outletId !== 'all') where.outlet_id = parseInt(req.query.outletId, 10);
+    const rows = await prisma.inventory.findMany({ where, include: { outlets: { select: { outlet_name: true, city: true } } } });
 
-    const queryText = `
-      SELECT i.*, o.outlet_name, o.city
-      FROM inventory i
-      JOIN outlets o ON i.outlet_id = o.id
-      ${whereClause}
-    `;
+    let totalValuation = 0, criticalCount = 0, lowCount = 0;
+    const restockRecommendations = [], depletionForecasts = [];
 
-    const result = await pool.query(queryText, values);
-    const items = result.rows;
-
-    let totalValuation = 0;
-    let criticalCount = 0;
-    let lowCount = 0;
-    const restockRecommendations = [];
-    const depletionForecasts = [];
-
-    items.forEach(r => {
-      const stock = parseFloat(r.current_stock);
-      const min = parseFloat(r.min_threshold);
-      const max = parseFloat(r.max_capacity);
-      const price = parseFloat(r.unit_price);
-
+    rows.forEach(r => {
+      const stock = r.current_stock, min = r.min_threshold, max = r.max_capacity, price = r.unit_price;
       totalValuation += stock * price;
       if (r.status === 'Critical') criticalCount++;
       else if (r.status === 'Low Stock') lowCount++;
-
       const dailyBurnRate = r.category === 'Coffee' ? 2.5 : r.category === 'Dairy' ? 12 : 5;
-      const daysRemaining = dailyBurnRate > 0 ? (stock / dailyBurnRate).toFixed(1) : 10;
-
-      depletionForecasts.push({
-        id: r.id,
-        itemName: r.item_name,
-        city: r.city,
-        currentStock: stock,
-        unit: r.unit,
-        dailyBurnRate,
-        daysRemaining: parseFloat(daysRemaining),
-        riskLevel: parseFloat(daysRemaining) < 3 ? 'High' : parseFloat(daysRemaining) < 7 ? 'Medium' : 'Low'
-      });
-
+      const daysRemaining = dailyBurnRate > 0 ? parseFloat((stock / dailyBurnRate).toFixed(1)) : 10;
+      depletionForecasts.push({ id: r.id, itemName: r.item_name, city: r.outlets.city, currentStock: stock, unit: r.unit, dailyBurnRate, daysRemaining, riskLevel: daysRemaining < 3 ? 'High' : daysRemaining < 7 ? 'Medium' : 'Low' });
       if (stock <= min) {
         const recommendedQty = Math.ceil(max - stock);
-        restockRecommendations.push({
-          id: r.id,
-          outletId: r.outlet_id,
-          outletName: r.outlet_name,
-          city: r.city,
-          itemName: r.item_name,
-          category: r.category,
-          currentStock: stock,
-          unit: r.unit,
-          recommendedQuantity: recommendedQty,
-          estimatedCost: parseFloat((recommendedQty * price).toFixed(2)),
-          urgency: r.status === 'Critical' ? 'Immediate' : 'Upcoming'
-        });
+        restockRecommendations.push({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: stock, unit: r.unit, recommendedQuantity: recommendedQty, estimatedCost: parseFloat((recommendedQty * price).toFixed(2)), urgency: r.status === 'Critical' ? 'Immediate' : 'Upcoming' });
       }
     });
 
-    res.json({
-      summary: {
-        totalItems: items.length,
-        totalValuation: parseFloat(totalValuation.toFixed(2)),
-        criticalItems: criticalCount,
-        lowStockItems: lowCount,
-        healthIndex: items.length > 0 ? Math.round(((items.length - criticalCount - lowCount) / items.length) * 100) : 100
-      },
-      restockRecommendations,
-      depletionForecasts: depletionForecasts.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, 8)
-    });
+    res.json({ summary: { totalItems: rows.length, totalValuation: parseFloat(totalValuation.toFixed(2)), criticalItems: criticalCount, lowStockItems: lowCount, healthIndex: rows.length > 0 ? Math.round(((rows.length - criticalCount - lowCount) / rows.length) * 100) : 100 }, restockRecommendations, depletionForecasts: depletionForecasts.sort((a, b) => a.daysRemaining - b.daysRemaining).slice(0, 8) });
   } catch (error) {
     console.error('Error fetching inventory agent insights:', error);
     res.status(500).json({ error: 'Server error computing inventory agent insights' });
@@ -801,81 +396,23 @@ app.get('/api/inventory/agent-insights', authenticateToken, async (req, res) => 
 });
 
 // ==========================================
-// 4. STAFF AGENT ENDPOINTS (Top/Bottom 5 Performers, Job Allocation, Login/Logoff Times)
+// 5. STAFF ENDPOINTS
 // ==========================================
 app.get('/api/staff', authenticateToken, async (req, res) => {
   try {
     const { outletId, shift, role } = req.query;
-    const conditions = [];
-    const values = [];
-    let paramIndex = 1;
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+    if (shift && shift !== 'all') where.shift_type = shift;
+    if (role && role !== 'all') where.role = role;
 
-    if (outletId && outletId !== 'all') {
-      conditions.push(`st.outlet_id = $${paramIndex}`);
-      values.push(parseInt(outletId, 10));
-      paramIndex++;
-    }
+    const rows = await prisma.staff.findMany({
+      where,
+      include: { outlets: { select: { outlet_name: true, city: true } } },
+      orderBy: [{ performance_rating: 'desc' }, { name: 'asc' }]
+    });
 
-    if (shift && shift !== 'all') {
-      conditions.push(`st.shift_type = $${paramIndex}`);
-      values.push(shift);
-      paramIndex++;
-    }
-
-    if (role && role !== 'all') {
-      conditions.push(`st.role = $${paramIndex}`);
-      values.push(role);
-      paramIndex++;
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const queryText = `
-      SELECT 
-        st.id,
-        st.outlet_id,
-        o.outlet_name,
-        o.city,
-        st.name,
-        st.role,
-        st.assigned_job,
-        st.shift_type,
-        st.login_time,
-        st.logoff_time,
-        st.hourly_rate,
-        st.hours_worked,
-        st.performance_rating,
-        st.status,
-        st.email,
-        st.phone
-      FROM staff st
-      JOIN outlets o ON st.outlet_id = o.id
-      ${whereClause}
-      ORDER BY st.performance_rating DESC, st.name ASC
-    `;
-
-    const result = await pool.query(queryText, values);
-
-    const members = result.rows.map(r => ({
-      id: r.id,
-      outletId: r.outlet_id,
-      outletName: r.outlet_name,
-      city: r.city,
-      name: r.name,
-      role: r.role,
-      assignedJob: r.assigned_job,
-      shiftType: r.shift_type,
-      loginTime: r.login_time,
-      logoffTime: r.logoff_time,
-      hourlyRate: parseFloat(r.hourly_rate),
-      hoursWorked: parseFloat(r.hours_worked),
-      monthlyWages: parseFloat((parseFloat(r.hourly_rate) * parseFloat(r.hours_worked)).toFixed(2)),
-      performanceRating: parseFloat(r.performance_rating),
-      status: r.status,
-      email: r.email,
-      phone: r.phone
-    }));
-
+    const members = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, name: r.name, role: r.role, assignedJob: r.assigned_job, shiftType: r.shift_type, loginTime: r.login_time, logoffTime: r.logoff_time, hourlyRate: r.hourly_rate, hoursWorked: r.hours_worked, monthlyWages: parseFloat((r.hourly_rate * r.hours_worked).toFixed(2)), performanceRating: r.performance_rating, status: r.status, email: r.email, phone: r.phone }));
     res.json(members);
   } catch (error) {
     console.error('Error fetching staff list:', error);
@@ -883,113 +420,40 @@ app.get('/api/staff', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/staff/performers (Top 5 & Bottom 5 performant employees + Available Jobs list)
 app.get('/api/staff/performers', authenticateToken, async (req, res) => {
   try {
     const { outletId } = req.query;
-    const conditions = [];
-    const values = [];
-    
-    if (outletId && outletId !== 'all') {
-      conditions.push(`st.outlet_id = $1`);
-      values.push(parseInt(outletId, 10));
-    }
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const mapStaff = (r) => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, name: r.name, role: r.role, assignedJob: r.assigned_job, shiftType: r.shift_type, loginTime: r.login_time, logoffTime: r.logoff_time, hourlyRate: r.hourly_rate, hoursWorked: r.hours_worked, performanceRating: r.performance_rating, status: r.status, email: r.email, phone: r.phone });
 
-    // Top 5 Performers
-    const topRes = await pool.query(`
-      SELECT st.*, o.outlet_name, o.city
-      FROM staff st
-      JOIN outlets o ON st.outlet_id = o.id
-      ${whereClause}
-      ORDER BY st.performance_rating DESC, st.hours_worked DESC
-      LIMIT 5
-    `, values);
+    const top5 = await prisma.staff.findMany({ where, include: { outlets: { select: { outlet_name: true, city: true } } }, orderBy: [{ performance_rating: 'desc' }, { hours_worked: 'desc' }], take: 5 });
+    const bottom5 = await prisma.staff.findMany({ where, include: { outlets: { select: { outlet_name: true, city: true } } }, orderBy: [{ performance_rating: 'asc' }, { hours_worked: 'asc' }], take: 5 });
 
-    // Bottom 5 Underperformers
-    const bottomRes = await pool.query(`
-      SELECT st.*, o.outlet_name, o.city
-      FROM staff st
-      JOIN outlets o ON st.outlet_id = o.id
-      ${whereClause}
-      ORDER BY st.performance_rating ASC, st.hours_worked ASC
-      LIMIT 5
-    `, values);
+    const availableJobs = ["Store Operations & Inventory Audit", "Lead Espresso Barista & Quality Check", "Floor Supervisor & Customer Service", "Front Desk POS & Cashier Lead", "Cold Brew & Beverage Specialist", "Pastry Heating & Sandwich Line", "Table Clearing & Order Runner", "Sanitization Lead & Inventory Restock"];
 
-    const availableJobs = [
-      "Store Operations & Inventory Audit",
-      "Lead Espresso Barista & Quality Check",
-      "Floor Supervisor & Customer Service",
-      "Front Desk POS & Cashier Lead",
-      "Cold Brew & Beverage Specialist",
-      "Pastry Heating & Sandwich Line",
-      "Table Clearing & Order Runner",
-      "Sanitization Lead & Inventory Restock"
-    ];
-
-    const mapStaff = (r) => ({
-      id: r.id,
-      outletId: r.outlet_id,
-      outletName: r.outlet_name,
-      city: r.city,
-      name: r.name,
-      role: r.role,
-      assignedJob: r.assigned_job,
-      shiftType: r.shift_type,
-      loginTime: r.login_time,
-      logoffTime: r.logoff_time,
-      hourlyRate: parseFloat(r.hourly_rate),
-      hoursWorked: parseFloat(r.hours_worked),
-      performanceRating: parseFloat(r.performance_rating),
-      status: r.status,
-      email: r.email,
-      phone: r.phone
-    });
-
-    res.json({
-      top5: topRes.rows.map(mapStaff),
-      bottom5: bottomRes.rows.map(r => ({
-        ...mapStaff(r),
-        diagnosticNote: `Rating ${r.performance_rating}/5.0 - Needs training in peak hour speed & order accuracy.`,
-        recommendedJobAllocation: "Table Clearing & Order Runner"
-      })),
-      availableJobs
-    });
-
+    res.json({ top5: top5.map(mapStaff), bottom5: bottom5.map(r => ({ ...mapStaff(r), diagnosticNote: `Rating ${r.performance_rating}/5.0 - Needs training in peak hour speed & order accuracy.`, recommendedJobAllocation: "Table Clearing & Order Runner" })), availableJobs });
   } catch (error) {
     console.error('Error fetching staff performers:', error);
     res.status(500).json({ error: 'Server error computing staff performers' });
   }
 });
 
-// PUT /api/staff/:id/allocate-job (Allocate / Update job assignment for a staff member)
 app.put('/api/staff/:id/allocate-job', authenticateToken, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
     const { assignedJob, shiftType, loginTime, logoffTime } = req.body;
+    if (!assignedJob) return res.status(400).json({ error: 'assignedJob parameter is required' });
 
-    if (!assignedJob) {
-      return res.status(400).json({ error: 'assignedJob parameter is required' });
-    }
+    const existing = await prisma.staff.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Staff member not found' });
 
-    const result = await pool.query(
-      `UPDATE staff
-       SET assigned_job = $1,
-           shift_type = COALESCE($2, shift_type),
-           login_time = COALESCE($3, login_time),
-           logoff_time = COALESCE($4, logoff_time),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5
-       RETURNING *`,
-      [assignedJob, shiftType, loginTime, logoffTime, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Staff member not found' });
-    }
-
-    res.json({ message: 'Job successfully allocated to staff member', staff: result.rows[0] });
+    const updated = await prisma.staff.update({
+      where: { id },
+      data: { assigned_job: assignedJob, shift_type: shiftType || existing.shift_type, login_time: loginTime || existing.login_time, logoff_time: logoffTime || existing.logoff_time, updated_at: new Date() }
+    });
+    res.json({ message: 'Job successfully allocated to staff member', staff: updated });
   } catch (error) {
     console.error('Error allocating job to staff member:', error);
     res.status(500).json({ error: 'Server error allocating job' });
@@ -998,57 +462,29 @@ app.put('/api/staff/:id/allocate-job', authenticateToken, async (req, res) => {
 
 app.get('/api/staff/agent-insights', authenticateToken, async (req, res) => {
   try {
-    const { whereClause, values } = getFilters(req.query);
+    const where = {};
+    if (req.query.outletId && req.query.outletId !== 'all') where.outlet_id = parseInt(req.query.outletId, 10);
 
-    const staffRes = await pool.query(`
-      SELECT st.*, o.outlet_name, o.city
-      FROM staff st
-      JOIN outlets o ON st.outlet_id = o.id
-      ${whereClause}
-    `, values);
+    const salesWhere = {};
+    if (req.query.outletId && req.query.outletId !== 'all') salesWhere.outlet_id = parseInt(req.query.outletId, 10);
 
-    const salesRes = await pool.query(`
-      SELECT COALESCE(SUM(gross_revenue), 0) as total_revenue
-      FROM sales
-      ${whereClause}
-    `, values);
+    const [staffMembers, salesRows] = await Promise.all([
+      prisma.staff.findMany({ where }),
+      prisma.sales.findMany({ where: salesWhere, select: { gross_revenue: true } })
+    ]);
 
-    const staffMembers = staffRes.rows;
-    const totalRevenue = parseFloat(salesRes.rows[0].total_revenue);
-
-    let totalPayroll = 0;
-    let sumRating = 0;
+    const totalRevenue = salesRows.reduce((s, r) => s + r.gross_revenue, 0);
+    let totalPayroll = 0, sumRating = 0;
     const shiftDistribution = { Morning: 0, Evening: 0, Night: 0 };
-
     staffMembers.forEach(s => {
-      const rate = parseFloat(s.hourly_rate);
-      const hours = parseFloat(s.hours_worked);
-      const rating = parseFloat(s.performance_rating);
-      totalPayroll += rate * hours;
-      sumRating += rating;
-
-      if (shiftDistribution[s.shift_type] !== undefined) {
-        shiftDistribution[s.shift_type]++;
-      }
+      totalPayroll += s.hourly_rate * s.hours_worked;
+      sumRating += s.performance_rating;
+      if (shiftDistribution[s.shift_type] !== undefined) shiftDistribution[s.shift_type]++;
     });
-
     const avgRating = staffMembers.length > 0 ? (sumRating / staffMembers.length).toFixed(2) : '4.00';
     const laborCostRatio = totalRevenue > 0 ? ((totalPayroll / totalRevenue) * 100).toFixed(1) : '18.5';
 
-    res.json({
-      summary: {
-        totalStaff: staffMembers.length,
-        totalMonthlyPayroll: parseFloat(totalPayroll.toFixed(2)),
-        averageRating: parseFloat(avgRating),
-        laborCostRatioPercentage: parseFloat(laborCostRatio),
-        shiftDistribution
-      },
-      optimizationSuggestions: [
-        `Labor cost ratio stands at ${laborCostRatio}% of revenue (Target benchmark: <22%).`,
-        `Morning shift holds ${shiftDistribution.Morning || 0} active staff to handle 8 AM - 11 AM peak coffee rushes.`,
-        `Recommended: Re-allocate top-rated Senior Baristas to underperforming stores to uplift order throughput and customer satisfaction.`
-      ]
-    });
+    res.json({ summary: { totalStaff: staffMembers.length, totalMonthlyPayroll: parseFloat(totalPayroll.toFixed(2)), averageRating: parseFloat(avgRating), laborCostRatioPercentage: parseFloat(laborCostRatio), shiftDistribution }, optimizationSuggestions: [`Labor cost ratio stands at ${laborCostRatio}% of revenue (Target benchmark: <22%).`, `Morning shift holds ${shiftDistribution.Morning || 0} active staff to handle 8 AM - 11 AM peak coffee rushes.`, `Recommended: Re-allocate top-rated Senior Baristas to underperforming stores to uplift order throughput and customer satisfaction.`] });
   } catch (error) {
     console.error('Error fetching staff agent insights:', error);
     res.status(500).json({ error: 'Server error computing staff agent insights' });
