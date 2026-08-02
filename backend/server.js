@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres:admin123@localhost:5432/franchiseAIDB?schema=public"
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.biidbeycggaggvaicnlr:BEdVIdulemlQs33B@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres"
 });
 
 pool.connect((err, client, release) => {
