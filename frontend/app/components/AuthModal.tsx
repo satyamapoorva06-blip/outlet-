@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import axios from "axios";
+import api from "../lib/api";
 
 interface User {
   id: number;
@@ -39,13 +39,13 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, outlets }: A
     setError(null);
 
     try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
+      const endpoint = mode === "login" ? "/auth/login" : "/auth/signup";
       const payload =
         mode === "login"
           ? { email, password }
           : { name, email, password, role, outletId: outletId || null };
 
-      const response = await axios.post(`http://localhost:5000${endpoint}`, payload);
+      const response = await api.post(endpoint, payload);
       
       const { user, token } = response.data;
       onAuthSuccess(user, token);

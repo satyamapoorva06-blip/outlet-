@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs & cache
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment & local secrets
+.env
+.env*.local
+*.env
+!.env.example
+
+# Testing & logs
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Database & SQLite local storage
+backend/prisma/*.sqlite
+backend/prisma/*.sqlite-journal
+
+# Scratch / agent temp files & OS metadata
+original_page_extracted.txt
+step28_view.txt
+*.tmp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.vercel/

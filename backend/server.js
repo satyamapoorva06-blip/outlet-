@@ -15,7 +15,7 @@ app.use(express.json());
 
 // Test DB connection on startup
 prisma.$connect()
-  .then(() => console.log('Successfully connected to SQLite database'))
+  .then(() => console.log('Successfully connected to PostgreSQL database (Supabase)'))
   .catch(err => console.error('Database connection failed:', err));
 
 const authenticateToken = (req, res, next) => {
@@ -268,8 +268,8 @@ function buildSalesWhere(query) {
   if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
   if (startDate || endDate) {
     where.sale_date = {};
-    if (startDate) where.sale_date.gte = startDate;
-    if (endDate) where.sale_date.lte = endDate;
+    if (startDate) where.sale_date.gte = new Date(startDate);
+    if (endDate) where.sale_date.lte = new Date(endDate);
   }
   return where;
 }
@@ -302,7 +302,7 @@ app.get('/api/sales/trends', authenticateToken, async (req, res) => {
     // Group by date
     const byDate = {};
     for (const r of sales) {
-      const d = r.sale_date.slice(0, 10);
+      const d = typeof r.sale_date === 'string' ? r.sale_date.slice(0, 10) : r.sale_date.toISOString().slice(0, 10);
       if (!byDate[d]) byDate[d] = { date: d, grossRevenue: 0, operatingCost: 0, netProfit: 0, totalOrders: 0 };
       byDate[d].grossRevenue += r.gross_revenue;
       byDate[d].operatingCost += r.operating_cost;
@@ -328,7 +328,7 @@ app.get('/api/sales/list', authenticateToken, async (req, res) => {
       take: parseInt(limit, 10),
       skip: parseInt(offset, 10)
     });
-    const records = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, saleDate: r.sale_date.slice(0, 10), totalOrders: r.total_orders, customerCount: r.customer_count, grossRevenue: r.gross_revenue, operatingCost: r.operating_cost, netProfit: r.net_profit, averageOrderValue: r.average_order_value, paymentSplit: { cash: r.payment_cash, card: r.payment_card, upi: r.payment_upi } }));
+    const records = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, saleDate: typeof r.sale_date === 'string' ? r.sale_date.slice(0, 10) : r.sale_date.toISOString().slice(0, 10), totalOrders: r.total_orders, customerCount: r.customer_count, grossRevenue: r.gross_revenue, operatingCost: r.operating_cost, netProfit: r.net_profit, averageOrderValue: r.average_order_value, paymentSplit: { cash: r.payment_cash, card: r.payment_card, upi: r.payment_upi } }));
     res.json({ records, pagination: { total: totalCount, limit: parseInt(limit, 10), offset: parseInt(offset, 10) } });
   } catch (error) {
     console.error('Error fetching sales list:', error);
@@ -357,7 +357,7 @@ app.get('/api/inventory', authenticateToken, async (req, res) => {
     const statusOrder = { 'Critical': 1, 'Low Stock': 2, 'In Stock': 3 };
     rows.sort((a, b) => (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3));
 
-    const items = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: r.current_stock, minThreshold: r.min_threshold, maxCapacity: r.max_capacity, unit: r.unit, unitPrice: r.unit_price, status: r.status, lastRestocked: r.last_restocked || null }));
+    const items = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: r.current_stock, minThreshold: r.min_threshold, maxCapacity: r.max_capacity, unit: r.unit, unitPrice: r.unit_price, status: r.status, lastRestocked: r.last_restocked ? (typeof r.last_restocked === 'string' ? r.last_restocked.slice(0, 10) : r.last_restocked.toISOString().slice(0, 10)) : null }));
     res.json(items);
   } catch (error) {
     console.error('Error fetching inventory:', error);
