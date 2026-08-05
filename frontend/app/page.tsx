@@ -6,6 +6,11 @@ import api from "./lib/api";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  Legend,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -284,6 +289,20 @@ export default function OperationsDashboard() {
   const [allocatingLogoffTime, setAllocatingLogoffTime] = useState<string>("");
   const [allocationSuccess, setAllocationSuccess] = useState<string | null>(null);
 
+  // Marketing Agent States
+  const [marketingSubTab, setMarketingSubTab] = useState<"overview" | "powerbi" | "ai" | "recommendations">("overview");
+  const [marketingKpis, setMarketingKpis] = useState<any>(null);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [aiSegments, setAiSegments] = useState<any>(null);
+  const [aiSentiment, setAiSentiment] = useState<any>(null);
+  const [aiForecast, setAiForecast] = useState<any[]>([]);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [predictBudget, setPredictBudget] = useState<number>(25000);
+  const [predictChannel, setPredictChannel] = useState<string>("Social Media");
+  const [predictionResult, setPredictionResult] = useState<any>(null);
+  const [applyingRecId, setApplyingRecId] = useState<number | null>(null);
+  const [rerunningAi, setRerunningAi] = useState<boolean>(false);
+
   // UI / Modal States
   const [loading, setLoading] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -382,6 +401,75 @@ export default function OperationsDashboard() {
         .finally(() => setLoading(false));
     }
   }, [activeStepId, selectedOutlet]);
+
+  // Marketing Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 6) {
+      setLoading(true);
+      Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/segmentation"),
+        api.get("/marketing/ai/sentiment"),
+        api.get("/marketing/ai/forecast"),
+        api.get("/marketing/ai/recommendations")
+      ])
+        .then(([kpisRes, campaignsRes, segRes, sentRes, foreRes, recRes]) => {
+          setMarketingKpis(kpisRes.data);
+          setCampaigns(campaignsRes.data);
+          setAiSegments(segRes.data);
+          setAiSentiment(sentRes.data);
+          setAiForecast(foreRes.data);
+          setAiRecommendations(recRes.data);
+        })
+        .catch((err) => console.error("Error loading marketing data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId]);
+
+  const handleApplyRecommendation = async (rec: any) => {
+    setApplyingRecId(rec.id);
+    try {
+      const res = await api.post("/marketing/recommendations/apply", {
+        reallocation_details: rec.reallocation_details,
+        campaign_id: rec.campaign_id
+      });
+      alert(res.data.message || "Recommendation applied successfully!");
+      // Reload states
+      setLoading(true);
+      const [kpisRes, campaignsRes, recRes] = await Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/recommendations")
+      ]);
+      setMarketingKpis(kpisRes.data);
+      setCampaigns(campaignsRes.data);
+      setAiRecommendations(recRes.data);
+    } catch (err: any) {
+      console.error("Error applying recommendation:", err);
+      alert(err.response?.data?.error || "Error applying recommendation");
+    } finally {
+      setApplyingRecId(null);
+      setLoading(false);
+    }
+  };
+
+  const handlePredictCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRerunningAi(true);
+    try {
+      const res = await api.post("/marketing/ai/predict", {
+        budget: Number(predictBudget),
+        channel: predictChannel
+      });
+      setPredictionResult(res.data);
+    } catch (err: any) {
+      console.error("Error predicting campaign:", err);
+      alert("Failed to predict campaign success.");
+    } finally {
+      setRerunningAi(false);
+    }
+  };
 
   const handleAllocateJob = async (staffId: number) => {
     if (!allocatingJob) return;
@@ -1626,8 +1714,530 @@ export default function OperationsDashboard() {
             </div>
           )}
 
-          {/* OTHER STEPS (1, 2, 6, 7, 8, 9, 10) Rendering within section */}
-          {![3, 4, 5].includes(activeStepId) && (
+          {/* STEP 6: MARKETING AGENT */}
+          {activeStepId === 6 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Feature Sub-Tabs Toggles */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMarketingSubTab("overview")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📈 Campaign Performance</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("powerbi")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "powerbi" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📊 PowerBI Embedded</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("ai")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "ai" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🤖 AI Marketing Engine</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("recommendations")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "recommendations" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>💡 AI Recommendations Panel ({aiRecommendations.length})</span>
+                </button>
+              </div>
+
+              {/* KPIs Header */}
+              {marketingKpis && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Net ROI</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">₹{marketingKpis.netRoi.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Efficiency: {marketingKpis.roas}x ROAS</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Total Attributed Revenue</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">₹{marketingKpis.attributedRevenue.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Total Spend: ₹{marketingKpis.totalSpend.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Avg CTR / Conv Rate</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">{marketingKpis.averageCtr}% / {marketingKpis.averageConvRate}%</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Interactive clicks</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Customer Engagement Index</span>
+                    <div className="text-xl font-black text-cyan-600 mt-1">{marketingKpis.engagementIndex} / 100</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">{marketingKpis.totalCustomers} profiles tracked</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 1. CAMPAIGN PERFORMANCE OVERVIEW */}
+              {marketingSubTab === "overview" && (
+                <div className="space-y-4">
+                  {/* Campaign Rankings Grid */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Campaign Rankings & Sales Impact</h3>
+                      <p className="text-xs text-slate-500">Live ROI tracking and attribution metrics across franchise promotional campaigns</p>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                            <th className="py-3 px-4">Campaign Name</th>
+                            <th className="py-3 px-4">Channel</th>
+                            <th className="py-3 px-4">Budget</th>
+                            <th className="py-3 px-4">Revenue</th>
+                            <th className="py-3 px-4">ROAS</th>
+                            <th className="py-3 px-4">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {campaigns.map((camp) => {
+                            const rep = camp.roi_reports[0] || { attributed_revenue: 0, efficiency_ratio: 0 };
+                            const roas = rep.efficiency_ratio;
+                            let statusBadge = "bg-slate-100 text-slate-600";
+                            if (camp.status === "Active") statusBadge = "bg-blue-100 text-blue-800 animate-pulse";
+                            else if (camp.status === "Completed") statusBadge = "bg-emerald-100 text-emerald-800";
+                            else if (camp.status === "Draft") statusBadge = "bg-amber-100 text-amber-800";
+
+                            return (
+                              <tr key={camp.id} className="hover:bg-slate-50/50">
+                                <td className="py-3 px-4 font-bold text-slate-800">{camp.name}</td>
+                                <td className="py-3 px-4 text-slate-600">{camp.channel}</td>
+                                <td className="py-3 px-4 font-semibold text-slate-700">₹{camp.budget.toLocaleString('en-IN')}</td>
+                                <td className="py-3 px-4 font-semibold text-emerald-600">₹{rep.attributed_revenue.toLocaleString('en-IN')}</td>
+                                <td className={`py-3 px-4 font-bold ${roas >= 2.0 ? "text-emerald-600" : roas >= 1.0 ? "text-indigo-600" : "text-rose-600"}`}>
+                                  {roas > 0 ? `${roas}x` : "-"}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
+                                    {camp.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Trend chart */}
+                  {campaigns.length > 0 && (
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                      <h3 className="text-base font-bold text-slate-900">Campaign Conversions Performance Trends</h3>
+                      <p className="text-xs text-slate-500">Active click-throughs and customer conversions tracked across promotional activities</p>
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={campaigns.flatMap(c => c.marketing_metrics || []).slice(0, 30)}
+                            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="colorConvs" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="recorded_date" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <Tooltip formatter={(value: any) => [Number(value).toLocaleString(), '']} />
+                            <Area type="monotone" dataKey="clicks" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorClicks)" name="Clicks" />
+                            <Area type="monotone" dataKey="pos_sales_conversions" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorConvs)" name="Conversions" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. POWERBI EMBEDDED VISUALIZATION */}
+              {marketingSubTab === "powerbi" && (
+                <div className="bg-slate-900 text-slate-100 rounded-2xl border border-slate-700/60 shadow-lg overflow-hidden flex flex-col h-[520px]">
+                  {/* Mock PowerBI Toolbar */}
+                  <div className="bg-slate-800/80 px-4 py-2 border-b border-slate-700/60 flex items-center justify-between text-xs font-semibold">
+                    <div className="flex items-center space-x-3">
+                      <span className="bg-yellow-500 text-slate-950 font-black px-1.5 py-0.5 rounded text-[10px] tracking-wider uppercase shadow-xs">Power BI</span>
+                      <span className="text-slate-300">Marketing ROI Analysis - Embedded Dashboard</span>
+                    </div>
+                    <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🔄</span> <span>Refresh</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖨️</span> <span>Print</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖥️</span> <span>Full Screen</span></button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-12 overflow-hidden bg-slate-950 p-4 gap-4">
+                    {/* Filters Pane */}
+                    <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-4 text-xs overflow-y-auto">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1.5">Filters</div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Campaign Status</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Statuses</option>
+                          <option>Active</option>
+                          <option>Completed</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Marketing Channel</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Channels</option>
+                          <option>Social Media</option>
+                          <option>POS Coupons</option>
+                          <option>CRM System Data</option>
+                        </select>
+                      </div>
+                      <div className="pt-2 border-t border-slate-800 space-y-2">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dashboard KPI Metrics</div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Top Channel</span>
+                          <span className="font-black text-amber-500 text-sm mt-0.5 block">POS Coupons</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Acquisition Efficiency</span>
+                          <span className="font-black text-emerald-500 text-sm mt-0.5 block">1.82x Net Lift</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Report Canvas */}
+                    <div className="col-span-9 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-100">Attribution Revenue by Marketing Channel</h4>
+                          <p className="text-[10px] text-slate-500">Cross-channel efficiency comparison and budget mapping</p>
+                        </div>
+                        <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">Status: Live Sync</span>
+                      </div>
+
+                      {/* Mock Chart Area */}
+                      <div className="flex-1 min-h-[220px]">
+                        {campaigns.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={campaigns.map(c => {
+                                const rep = c.roi_reports[0] || { total_spend: c.budget, attributed_revenue: 0 };
+                                return {
+                                  name: c.name.slice(0, 14) + "..",
+                                  Spend: rep.total_spend,
+                                  Revenue: rep.attributed_revenue
+                                };
+                              })}
+                              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff' }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar dataKey="Spend" fill="#6366f1" name="Budget Spend" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="Revenue" fill="#10b981" name="Attributed Revenue" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-slate-500 text-xs">No active campaign data loaded.</div>
+                        )}
+                      </div>
+
+                      {/* Mini cards */}
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Total Interactions</span>
+                          <span className="text-base font-black text-slate-100 mt-1 block">42,500</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Sentiment Score</span>
+                          <span className="text-base font-black text-emerald-400 mt-1 block">78.5% Positive</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Target Conversion Rate</span>
+                          <span className="text-base font-black text-indigo-400 mt-1 block">22.4%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. AI MARKETING ENGINE */}
+              {marketingSubTab === "ai" && (
+                <div className="space-y-6">
+                  {/* Segmentation and Predictor Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Segmentation Results */}
+                    {aiSegments && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">K-Means Customer Segmentation</h3>
+                          <p className="text-xs text-slate-500">Clustering based on total spend, visit frequency, and customer age profile</p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          {Object.keys(aiSegments.stats || {}).map((segKey) => {
+                            const stat = aiSegments.stats[segKey];
+                            let cardColor = "border-slate-100 bg-slate-50/50";
+                            let textColor = "text-slate-900";
+                            if (segKey === "High-Value") { cardColor = "border-emerald-200 bg-emerald-50/20"; textColor = "text-emerald-700"; }
+                            else if (segKey === "Churn-Risk") { cardColor = "border-rose-200 bg-rose-50/20"; textColor = "text-rose-700"; }
+
+                            return (
+                              <div key={segKey} className={`p-3 rounded-xl border text-center ${cardColor}`}>
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase">{segKey}</span>
+                                <span className={`text-lg font-black mt-1 block ${textColor}`}>{stat.count}</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Spend: ₹{Math.round(stat.average_spend)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Mini listing */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden text-[11px]">
+                          <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 font-bold text-slate-600 flex justify-between">
+                            <span>Sample Customer Name</span>
+                            <span>Engagement Segment</span>
+                          </div>
+                          <div className="divide-y divide-slate-50 max-h-32 overflow-y-auto">
+                            {aiSegments.customers?.slice(0, 5).map((cust: any, idx: number) => (
+                              <div key={idx} className="px-3 py-2 flex justify-between hover:bg-slate-50/30">
+                                <span className="text-slate-800 font-semibold">{cust.name}</span>
+                                <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
+                                  cust.segment === 'High-Value' ? "bg-emerald-100 text-emerald-800" : cust.segment === 'Churn-Risk' ? "bg-rose-100 text-rose-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {cust.segment}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Campaign Performance Predictor */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Campaign Success Predictor</h3>
+                        <p className="text-xs text-slate-500">Evaluate prospective campaign efficiency and impressions prior to launching</p>
+                      </div>
+
+                      <form onSubmit={handlePredictCampaign} className="space-y-3.5 text-xs text-slate-700">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Marketing Channel</label>
+                            <select
+                              value={predictChannel}
+                              onChange={(e) => setPredictChannel(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 cursor-pointer text-slate-800"
+                            >
+                              <option value="Social Media">Social Media</option>
+                              <option value="POS Coupons">POS Coupons</option>
+                              <option value="CRM System Data">CRM System Data</option>
+                              <option value="Google Analytics">Google Analytics</option>
+                              <option value="Website Analytics">Website Analytics</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Target Audience Budget (₹)</label>
+                            <input
+                              type="number"
+                              value={predictBudget}
+                              onChange={(e) => setPredictBudget(Number(e.target.value))}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 font-semibold"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={rerunningAi}
+                          className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-lg shadow-sm cursor-pointer hover:bg-indigo-700 transition-all disabled:bg-indigo-400"
+                        >
+                          {rerunningAi ? "Running Regression Predictor..." : "🔍 Run Prediction Algorithm"}
+                        </button>
+                      </form>
+
+                      {/* Prediction Result Display */}
+                      {predictionResult ? (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 grid grid-cols-3 gap-2.5 text-[11px] animate-in fade-in duration-200">
+                          <div className="col-span-3 font-bold text-slate-800 border-b border-slate-200/60 pb-1 flex justify-between">
+                            <span>Predicted Impact ({predictionResult.channel})</span>
+                            <span className="text-indigo-600 uppercase text-[9px] font-black">{predictionResult.effectiveness_tag}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">CONVERSIONS</span>
+                            <span className="font-black text-slate-800 text-sm mt-0.5 block">{predictionResult.predicted_conversions}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST REVENUE</span>
+                            <span className="font-black text-emerald-600 text-sm mt-0.5 block">₹{Math.round(predictionResult.attributed_revenue).toLocaleString('en-IN')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST ROAS</span>
+                            <span className="font-black text-indigo-600 text-sm mt-0.5 block">{predictionResult.roas}x</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center text-slate-400 text-xs py-6">
+                          Select inputs above to evaluate simulated campaign ROI.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sentiment and Forecasting Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Sentiment NLP */}
+                    {aiSentiment && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Social Media Feedback Sentiment (NLP)</h3>
+                          <p className="text-xs text-slate-500">Live NLP sentiment classification of customer comments and store mentions</p>
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-center w-24">
+                            <span className="text-[10px] text-slate-500 block font-bold">INDEX</span>
+                            <span className="font-black text-slate-800 text-xl mt-1 block">{Math.round(aiSentiment.average_sentiment_score * 100)}%</span>
+                          </div>
+
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-slate-500">Feedback Distribution</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                              <div className="bg-emerald-500" style={{ width: `${(aiSentiment.sentiment_distribution.Positive / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-slate-300" style={{ width: `${(aiSentiment.sentiment_distribution.Neutral / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-rose-500" style={{ width: `${(aiSentiment.sentiment_distribution.Negative / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold">
+                              <span className="text-emerald-600 flex items-center">● Pos ({aiSentiment.sentiment_distribution.Positive})</span>
+                              <span className="text-slate-500 flex items-center">● Neu ({aiSentiment.sentiment_distribution.Neutral})</span>
+                              <span className="text-rose-600 flex items-center">● Neg ({aiSentiment.sentiment_distribution.Negative})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Comments listing */}
+                        <div className="divide-y divide-slate-50 border border-slate-100 rounded-xl max-h-32 overflow-y-auto text-[10px]">
+                          {aiSentiment.comments?.map((comment: any, idx: number) => (
+                            <div key={idx} className="p-2 flex justify-between hover:bg-slate-50/50">
+                              <span className="text-slate-700 truncate max-w-sm font-semibold">"{comment.text}"</span>
+                              <span className={`font-bold px-1 py-0.5 rounded text-[8px] tracking-wider ${
+                                comment.sentiment === 'Positive' ? "bg-emerald-100 text-emerald-800" : comment.sentiment === 'Negative' ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-800"
+                              }`}>
+                                {comment.sentiment}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Time Series Forecasting */}
+                    {aiForecast.length > 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Revenue & Engagement 14-Day Forecast</h3>
+                          <p className="text-xs text-slate-500">ML Random Forest trend projection for marketing-attributed revenue volume</p>
+                        </div>
+
+                        <div className="h-48 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={aiForecast} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                              <XAxis dataKey="date" tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <YAxis tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <Tooltip formatter={(value: any) => [`₹${Number(value).toLocaleString()}`, '']} />
+                              <Line type="monotone" dataKey="predicted_revenue" stroke="#7c3aed" strokeWidth={2.5} name="Forecast Revenue" dot={{ r: 2 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. AI RECOMMENDATIONS PANEL */}
+              {marketingSubTab === "recommendations" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">AI-Generated Campaign Optimization Board</h3>
+                      <p className="text-xs text-slate-500">Real-time budget reallocation advice and targeted audience refinements</p>
+                    </div>
+                    <span className="text-[10px] text-rose-500 bg-rose-50 border border-rose-100 font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Action Required</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {aiRecommendations.map((rec) => {
+                      const isHigh = rec.priority === "High";
+                      const isApplying = applyingRecId === rec.id;
+
+                      return (
+                        <div
+                          key={rec.id}
+                          className={`bg-white rounded-2xl border p-5 space-y-4 shadow-sm flex flex-col justify-between transition-all duration-150 ${
+                            isHigh ? "border-rose-200 bg-rose-50/5" : "border-slate-200"
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                isHigh ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {rec.priority} Priority
+                              </span>
+                              <span className="text-[10px] font-mono text-emerald-600 font-bold">{rec.estimated_roi_impact}</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{rec.type}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{rec.description}</p>
+                          </div>
+
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyRecommendation(rec)}
+                              disabled={isApplying}
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs shadow-xs cursor-pointer transition-all flex items-center justify-center space-x-1 disabled:bg-slate-600"
+                            >
+                              {isApplying ? (
+                                <>
+                                  <span className="animate-spin text-xs">🌀</span>
+                                  <span>Applying Adjustments...</span>
+                                </>
+                              ) : (
+                                <span>Apply Optimization Suggestion</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OTHER STEPS (1, 2, 7, 8, 9, 10) Rendering within section */}
+          {![3, 4, 5, 6].includes(activeStepId) && (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
                 <Icons.Workflow />

@@ -7,12 +7,17 @@ async function main() {
   console.log('Seeding SQLite database via Prisma...');
 
   // Clear all tables in correct order (FK constraints)
+  await prisma.roi_reports.deleteMany();
+  await prisma.marketing_metrics.deleteMany();
+  await prisma.campaigns.deleteMany();
+  await prisma.customers.deleteMany();
   await prisma.sales.deleteMany();
   await prisma.inventory.deleteMany();
   await prisma.staff.deleteMany();
   await prisma.users.deleteMany();
   await prisma.outlets.deleteMany();
-  console.log('Cleared all existing data.');
+  console.log('Cleared all existing data (including marketing agent tables).');
+
 
   // 1. Seed Outlets
   const outletData = [
@@ -134,9 +139,152 @@ async function main() {
   }
   console.log(`Seeded ${salesCount} sales records.`);
 
+  // 6. Seed Customers
+  console.log('Seeding customers...');
+  const customerNames = [
+    "Vihaan Sharma", "Ananya Iyer", "Arjun Patel", "Diya Nair", "Sai Krishna", 
+    "Ishaan Gupta", "Aanya Verma", "Kabir Roy", "Meera Sen", "Aditya Bose", 
+    "Sanya Malik", "Rohan Mehta", "Prisha Joshi", "Dev Choudhury", "Tara Rao",
+    "Karan Khanna", "Riya Malhotra", "Nikhil Kapoor", "Siddharth Rao", "Alisha Das"
+  ];
+  const cities = ["Bengaluru", "Hyderabad", "Chennai", "Mumbai", "Pune"];
+  const genders = ["Male", "Female"];
+  const customerData = [];
+
+  for (let c = 1; c <= 120; c++) {
+    const baseName = customerNames[c % customerNames.length];
+    const name = `${baseName} ${String.fromCharCode(65 + (c % 26))}.`;
+    const email = `${name.toLowerCase().replace(/[^a-z]/g, '')}${c}@gmail.com`;
+    const phone = `+91 99${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const age = Math.floor(18 + Math.random() * 45);
+    const gender = genders[c % 2];
+    const visit_count = Math.floor(1 + Math.random() * 50);
+    const total_spend = parseFloat((visit_count * (120 + Math.random() * 280)).toFixed(2));
+    
+    // Simple heuristic for base engagement score
+    const recency_factor = Math.random() * 30; // higher is better
+    const freq_factor = Math.min(40, (visit_count / 50) * 40);
+    const monetary_factor = Math.min(30, (total_spend / 15000) * 30);
+    const calculated_engagement_score = parseFloat((recency_factor + freq_factor + monetary_factor).toFixed(2));
+    
+    // Heuristic for base segment
+    let segment = "Regular";
+    if (calculated_engagement_score > 65 && total_spend > 5000) segment = "High-Value";
+    else if (calculated_engagement_score < 25 || visit_count < 4) segment = "Churn-Risk";
+
+    customerData.push({
+      name, email, phone, age, gender, total_spend, visit_count, calculated_engagement_score, segment
+    });
+  }
+
+  for (const cust of customerData) {
+    await prisma.customers.create({ data: cust });
+  }
+  console.log(`Seeded ${customerData.length} customers.`);
+
+  // 7. Seed Campaigns
+  console.log('Seeding campaigns...');
+  const campaignData = [
+    { name: "Summer Cooler Launch", channel: "Social Media", start_date: "2026-06-01", end_date: "2026-06-30", budget: 35000, status: "Completed", targeted_segments: "High-Value, Regular" },
+    { name: "Monsoon Weekend Special", channel: "POS Coupons", start_date: "2026-07-01", end_date: "2026-07-15", budget: 15000, status: "Completed", targeted_segments: "High-Value, Churn-Risk" },
+    { name: "Double Point Wednesdays", channel: "CRM System Data", start_date: "2026-07-01", end_date: "2026-08-31", budget: 12000, status: "Active", targeted_segments: "Regular, High-Value" },
+    { name: "Late Night Happy Hours", channel: "Google Analytics", start_date: "2026-07-10", end_date: "2026-08-10", budget: 25000, status: "Active", targeted_segments: "Regular" },
+    { name: "Bandra Store Anniversary Promo", channel: "Website Analytics", start_date: "2026-06-15", end_date: "2026-06-25", budget: 20000, status: "Completed", targeted_segments: "Regular" },
+    { name: "Organic Cold Brew Drive", channel: "Social Media", start_date: "2026-08-10", end_date: "2026-08-31", budget: 40000, status: "Draft", targeted_segments: "High-Value" },
+    { name: "Festive Coffee Box Gifting", channel: "Google Analytics", start_date: "2026-09-01", end_date: "2026-10-15", budget: 60000, status: "Draft", targeted_segments: "High-Value" },
+    { name: "Express Delivery Promo", channel: "Website Analytics", start_date: "2026-05-01", end_date: "2026-05-15", budget: 18000, status: "Completed", targeted_segments: "Regular" },
+    { name: "Monday Morning Boost", channel: "Social Media", start_date: "2026-05-10", end_date: "2026-06-10", budget: 10000, status: "Completed", targeted_segments: "Regular" }
+  ];
+
+  const campaigns = [];
+  for (const camp of campaignData) {
+    const created = await prisma.campaigns.create({ data: camp });
+    campaigns.push(created);
+  }
+  console.log(`Seeded ${campaigns.length} campaigns.`);
+
+  // 8. Seed Marketing Metrics and ROI Reports
+  console.log('Seeding metrics and calculating ROI...');
+  for (const camp of campaigns) {
+    if (camp.status === 'Draft') continue;
+
+    const start = new Date(camp.start_date);
+    const end = new Date(camp.end_date);
+    const days = Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) || 1;
+    
+    let totalClicks = 0;
+    let totalImpressions = 0;
+    let totalConversions = 0;
+    let totalRedemptions = 0;
+
+    // Generate daily metrics
+    for (let d = 0; d < days; d++) {
+      const metricDate = new Date(start);
+      metricDate.setDate(start.getDate() + d);
+      
+      const dayOfWeek = metricDate.getDay();
+      const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+      
+      // Base channel characteristics
+      let baseImps = 2000, clickThruRate = 0.04, convRate = 0.20;
+      if (camp.channel === "Social Media") { baseImps = 5000; clickThruRate = 0.06; convRate = 0.15; }
+      else if (camp.channel === "POS Coupons") { baseImps = 800; clickThruRate = 0.25; convRate = 0.60; }
+      else if (camp.channel === "CRM System Data") { baseImps = 1200; clickThruRate = 0.12; convRate = 0.35; }
+      else if (camp.channel === "Google Analytics") { baseImps = 3000; clickThruRate = 0.05; convRate = 0.18; }
+      else if (camp.channel === "Website Analytics") { baseImps = 2200; clickThruRate = 0.08; convRate = 0.22; }
+
+      const boost = isWeekend ? 1.25 : 0.95;
+      const rnd = 0.85 + Math.random() * 0.3;
+
+      const impressions = Math.round(baseImps * boost * rnd);
+      const clicks = Math.round(impressions * clickThruRate * rnd);
+      const pos_sales_conversions = Math.round(clicks * convRate * rnd);
+      const coupon_redemptions = camp.channel === "POS Coupons" ? Math.round(clicks * 0.9) : 0;
+      const sentiment_score = parseFloat((0.65 + Math.random() * 0.3 - (d % 3 === 0 ? 0.15 : 0)).toFixed(2));
+      const recorded_date = metricDate.toISOString().slice(0, 10);
+
+      await prisma.marketing_metrics.create({
+        data: {
+          campaign_id: camp.id,
+          clicks,
+          impressions,
+          pos_sales_conversions,
+          sentiment_score,
+          coupon_redemptions,
+          recorded_date
+        }
+      });
+
+      totalClicks += clicks;
+      totalImpressions += impressions;
+      totalConversions += pos_sales_conversions;
+      totalRedemptions += coupon_redemptions;
+    }
+
+    // Attributed Revenue is based on conversions * average order value (e.g. ₹280)
+    const avgAOV = camp.channel === "POS Coupons" ? 220 : 310;
+    const attributed_revenue = parseFloat((totalConversions * avgAOV).toFixed(2));
+    const total_spend = camp.budget;
+    const net_roi = parseFloat((attributed_revenue - total_spend).toFixed(2));
+    const efficiency_ratio = total_spend > 0 ? parseFloat((attributed_revenue / total_spend).toFixed(2)) : 0;
+
+    await prisma.roi_reports.create({
+      data: {
+        campaign_id: camp.id,
+        total_spend,
+        attributed_revenue,
+        net_roi,
+        efficiency_ratio,
+        calculated_timestamp: new Date()
+      }
+    });
+  }
+  console.log('Seeded marketing metrics and calculated initial ROI reports.');
+
   console.log('\n🎉 SEED COMPLETE! Local SQLite database is ready.');
   console.log('Login with: admin@franchiseops.ai / admin123');
 }
+
 
 main()
   .catch(e => { console.error(e); process.exit(1); })

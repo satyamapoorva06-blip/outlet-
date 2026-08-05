@@ -19,8 +19,12 @@ async function main() {
       DROP TABLE IF EXISTS staff;
       DROP TABLE IF EXISTS users;
       DROP TABLE IF EXISTS outlets;
+      DROP TABLE IF EXISTS roi_reports;
+      DROP TABLE IF EXISTS marketing_metrics;
+      DROP TABLE IF EXISTS campaigns;
+      DROP TABLE IF EXISTS customers;
     `);
-    console.log("Dropped old tables cleanly.");
+    console.log("Dropped old tables cleanly (including marketing tables).");
 
     // 1. Outlets
     db.exec(`
@@ -115,7 +119,70 @@ async function main() {
       );
     `);
 
-    console.log("Created fresh tables: outlets, sales, users, inventory, staff.");
+    // 6. Customers
+    db.exec(`
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        phone TEXT,
+        age INTEGER,
+        gender TEXT,
+        total_spend REAL DEFAULT 0.0,
+        visit_count INTEGER DEFAULT 0,
+        calculated_engagement_score REAL DEFAULT 0.0,
+        segment TEXT DEFAULT 'Regular',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    // 7. Campaigns
+    db.exec(`
+      CREATE TABLE campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        budget REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        targeted_segments TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    // 8. Marketing Metrics
+    db.exec(`
+      CREATE TABLE marketing_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        clicks INTEGER DEFAULT 0,
+        impressions INTEGER DEFAULT 0,
+        pos_sales_conversions INTEGER DEFAULT 0,
+        sentiment_score REAL DEFAULT 0.0,
+        coupon_redemptions INTEGER DEFAULT 0,
+        recorded_date TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    // 9. ROI Reports
+    db.exec(`
+      CREATE TABLE roi_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        total_spend REAL NOT NULL,
+        attributed_revenue REAL NOT NULL,
+        net_roi REAL NOT NULL,
+        efficiency_ratio REAL NOT NULL,
+        calculated_timestamp TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    console.log("Created fresh tables: outlets, sales, users, inventory, staff, customers, campaigns, marketing_metrics, roi_reports.");
 
     // Seed outlets
     const defaultOutlets = [
@@ -287,6 +354,126 @@ async function main() {
     insertManySales();
     console.log(`Seeded ${salesCount} sales records.`);
 
+    // --- SEED MARKETING DATA ---
+    console.log("Seeding marketing tables...");
+    const insertCustomer = db.prepare(`
+      INSERT INTO customers (name, email, phone, age, gender, total_spend, visit_count, calculated_engagement_score, segment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const customerNames = [
+      "Vihaan Sharma", "Ananya Iyer", "Arjun Patel", "Diya Nair", "Sai Krishna", 
+      "Ishaan Gupta", "Aanya Verma", "Kabir Roy", "Meera Sen", "Aditya Bose", 
+      "Sanya Malik", "Rohan Mehta", "Prisha Joshi", "Dev Choudhury", "Tara Rao",
+      "Karan Khanna", "Riya Malhotra", "Nikhil Kapoor", "Siddharth Rao", "Alisha Das"
+    ];
+    const genders = ["Male", "Female"];
+    for (let c = 1; c <= 120; c++) {
+      const baseName = customerNames[c % customerNames.length];
+      const name = `${baseName} ${String.fromCharCode(65 + (c % 26))}.`;
+      const email = `${name.toLowerCase().replace(/[^a-z]/g, '')}${c}@gmail.com`;
+      const phone = `+91 99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const age = Math.floor(18 + Math.random() * 45);
+      const gender = genders[c % 2];
+      const visit_count = Math.floor(1 + Math.random() * 50);
+      const total_spend = parseFloat((visit_count * (120 + Math.random() * 280)).toFixed(2));
+      
+      const recency_factor = Math.random() * 30;
+      const freq_factor = Math.min(40, (visit_count / 50) * 40);
+      const monetary_factor = Math.min(30, (total_spend / 15000) * 30);
+      const calculated_engagement_score = parseFloat((recency_factor + freq_factor + monetary_factor).toFixed(2));
+      
+      let segment = "Regular";
+      if (calculated_engagement_score > 65 && total_spend > 5000) segment = "High-Value";
+      else if (calculated_engagement_score < 25 || visit_count < 4) segment = "Churn-Risk";
+
+      insertCustomer.run(name, email, phone, age, gender, total_spend, visit_count, calculated_engagement_score, segment);
+    }
+
+    const campaignData = [
+      { name: "Summer Cooler Launch", channel: "Social Media", start_date: "2026-06-01", end_date: "2026-06-30", budget: 35000, status: "Completed", targeted_segments: "High-Value, Regular" },
+      { name: "Monsoon Weekend Special", channel: "POS Coupons", start_date: "2026-07-01", end_date: "2026-07-15", budget: 15000, status: "Completed", targeted_segments: "High-Value, Churn-Risk" },
+      { name: "Double Point Wednesdays", channel: "CRM System Data", start_date: "2026-07-01", end_date: "2026-08-31", budget: 12000, status: "Active", targeted_segments: "Regular, High-Value" },
+      { name: "Late Night Happy Hours", channel: "Google Analytics", start_date: "2026-07-10", end_date: "2026-08-10", budget: 25000, status: "Active", targeted_segments: "Regular" },
+      { name: "Bandra Store Anniversary Promo", channel: "Website Analytics", start_date: "2026-06-15", end_date: "2026-06-25", budget: 20000, status: "Completed", targeted_segments: "Regular" },
+      { name: "Organic Cold Brew Drive", channel: "Social Media", start_date: "2026-08-10", end_date: "2026-08-31", budget: 40000, status: "Draft", targeted_segments: "High-Value" },
+      { name: "Festive Coffee Box Gifting", channel: "Google Analytics", start_date: "2026-09-01", end_date: "2026-10-15", budget: 60000, status: "Draft", targeted_segments: "High-Value" },
+      { name: "Express Delivery Promo", channel: "Website Analytics", start_date: "2026-05-01", end_date: "2026-05-15", budget: 18000, status: "Completed", targeted_segments: "Regular" },
+      { name: "Monday Morning Boost", channel: "Social Media", start_date: "2026-05-10", end_date: "2026-06-10", budget: 10000, status: "Completed", targeted_segments: "Regular" }
+    ];
+
+    const insertCampaign = db.prepare(`
+      INSERT INTO campaigns (name, channel, start_date, end_date, budget, status, targeted_segments)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMetric = db.prepare(`
+      INSERT INTO marketing_metrics (campaign_id, clicks, impressions, pos_sales_conversions, sentiment_score, coupon_redemptions, recorded_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertROI = db.prepare(`
+      INSERT INTO roi_reports (campaign_id, total_spend, attributed_revenue, net_roi, efficiency_ratio, calculated_timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const camp of campaignData) {
+      const info = insertCampaign.run(camp.name, camp.channel, camp.start_date, camp.end_date, camp.budget, camp.status, camp.targeted_segments);
+      const campaignId = info.lastInsertRowid;
+
+      if (camp.status === 'Draft') continue;
+
+      const start = new Date(camp.start_date);
+      const end = new Date(camp.end_date);
+      const days = Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) || 1;
+      
+      let totalClicks = 0;
+      let totalImpressions = 0;
+      let totalConversions = 0;
+      let totalRedemptions = 0;
+
+      for (let d = 0; d < days; d++) {
+        const metricDate = new Date(start);
+        metricDate.setDate(start.getDate() + d);
+        
+        const dayOfWeek = metricDate.getDay();
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+        
+        let baseImps = 2000, clickThruRate = 0.04, convRate = 0.20;
+        if (camp.channel === "Social Media") { baseImps = 5000; clickThruRate = 0.06; convRate = 0.15; }
+        else if (camp.channel === "POS Coupons") { baseImps = 800; clickThruRate = 0.25; convRate = 0.60; }
+        else if (camp.channel === "CRM System Data") { baseImps = 1200; clickThruRate = 0.12; convRate = 0.35; }
+        else if (camp.channel === "Google Analytics") { baseImps = 3000; clickThruRate = 0.05; convRate = 0.18; }
+        else if (camp.channel === "Website Analytics") { baseImps = 2200; clickThruRate = 0.08; convRate = 0.22; }
+
+        const boost = isWeekend ? 1.25 : 0.95;
+        const rnd = 0.85 + Math.random() * 0.3;
+
+        const impressions = Math.round(baseImps * boost * rnd);
+        const clicks = Math.round(impressions * clickThruRate * rnd);
+        const pos_sales_conversions = Math.round(clicks * convRate * rnd);
+        const coupon_redemptions = camp.channel === "POS Coupons" ? Math.round(clicks * 0.9) : 0;
+        const sentiment_score = parseFloat((0.65 + Math.random() * 0.3 - (d % 3 === 0 ? 0.15 : 0)).toFixed(2));
+        const recorded_date = metricDate.toISOString().slice(0, 10);
+
+        insertMetric.run(campaignId, clicks, impressions, pos_sales_conversions, sentiment_score, coupon_redemptions, recorded_date);
+
+        totalClicks += clicks;
+        totalImpressions += impressions;
+        totalConversions += pos_sales_conversions;
+        totalRedemptions += coupon_redemptions;
+      }
+
+      const avgAOV = camp.channel === "POS Coupons" ? 220 : 310;
+      const attributed_revenue = parseFloat((totalConversions * avgAOV).toFixed(2));
+      const total_spend = camp.budget;
+      const net_roi = parseFloat((attributed_revenue - total_spend).toFixed(2));
+      const efficiency_ratio = total_spend > 0 ? parseFloat((attributed_revenue / total_spend).toFixed(2)) : 0;
+
+      insertROI.run(campaignId, total_spend, attributed_revenue, net_roi, efficiency_ratio, new Date().toISOString());
+    }
+    console.log("Seeded marketing metrics and computed ROI reports in SQLite.");
+
     db.pragma('foreign_keys = ON');
 
     console.log(`\n🎉 SEED COMPLETE! SQLite database ready:`);
@@ -295,6 +482,8 @@ async function main() {
     console.log(`- 50 Inventory Items`);
     console.log(`- ${staffCount} Staff Members`);
     console.log(`- ${salesCount} Daily Sales Records`);
+    console.log(`- 120 Customer Profiles`);
+    console.log(`- 9 Marketing Campaigns & associated metrics`);
     console.log(`\nDatabase file: ${DB_PATH}`);
 
   } catch (err) {
