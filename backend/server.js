@@ -9,13 +9,62 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'franchiseops_super_secret_jwt_key_2026';
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 app.use(cors());
 app.use(express.json());
 
+// Root health & status endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'FranchiseOps AI Backend REST API Server is running.',
+    frontend_url: 'http://localhost:3000',
+    api_endpoints: [
+      '/api/auth/login',
+      '/api/auth/signup',
+      '/api/outlets',
+      '/api/outlets/compare',
+      '/api/sales/metrics',
+      '/api/sales/trends',
+      '/api/sales/list',
+      '/api/inventory',
+      '/api/marketing/campaigns',
+      '/api/marketing/roi',
+      '/api/marketing/recommendations',
+      '/api/marketing/predict',
+      '/api/marketing/social-connections'
+    ]
+  });
+});
+
+// Debug: list registered routes (temporary)
+app.get('/debug/routes', (req, res) => {
+  try {
+    const routes = [];
+    app._router.stack.forEach((middleware) => {
+      if (middleware.route) {
+        const methods = Object.keys(middleware.route.methods).join(',').toUpperCase();
+        routes.push({ path: middleware.route.path, methods });
+      } else if (middleware.name === 'router' && middleware.handle && middleware.handle.stack) {
+        middleware.handle.stack.forEach((handler) => {
+          if (handler.route) {
+            const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
+            routes.push({ path: handler.route.path, methods });
+          }
+        });
+      }
+    });
+    res.json(routes.sort((a,b)=>a.path.localeCompare(b.path)));
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list routes', detail: String(e) });
+  }
+});
+
 // Test DB connection on startup
 prisma.$connect()
-  .then(() => console.log('Successfully connected to PostgreSQL database (Supabase)'))
+  .then(() => console.log('Successfully connected to database'))
   .catch(err => console.error('Database connection failed:', err));
 
 const authenticateToken = (req, res, next) => {
@@ -110,10 +159,14 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // ==========================================
 app.get('/api/outlets', async (req, res) => {
   try {
+    console.log('[server] GET /api/outlets start');
     const outlets = await prisma.outlets.findMany({ where: { is_active: true }, orderBy: { id: 'asc' } });
+    console.log('[server] GET /api/outlets fetched', outlets.length);
     res.json(outlets);
   } catch (error) {
-    console.error('Error fetching outlets:', error);
+    const msg = `[${new Date().toISOString()}] Error fetching outlets: ${error}\n${error && error.stack}\n`;
+    console.error('Error fetching outlets:', error, error && error.stack);
+    try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), msg); } catch (e) { console.error('Failed to write server_error.log', e); }
     res.status(500).json({ error: 'Server error fetching outlets' });
   }
 });
@@ -268,8 +321,8 @@ function buildSalesWhere(query) {
   if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
   if (startDate || endDate) {
     where.sale_date = {};
-    if (startDate) where.sale_date.gte = new Date(startDate);
-    if (endDate) where.sale_date.lte = new Date(endDate);
+    if (startDate) where.sale_date.gte = startDate;
+    if (endDate) where.sale_date.lte = endDate;
   }
   return where;
 }
@@ -302,7 +355,7 @@ app.get('/api/sales/trends', authenticateToken, async (req, res) => {
     // Group by date
     const byDate = {};
     for (const r of sales) {
-      const d = typeof r.sale_date === 'string' ? r.sale_date.slice(0, 10) : r.sale_date.toISOString().slice(0, 10);
+      const d = r.sale_date.slice(0, 10);
       if (!byDate[d]) byDate[d] = { date: d, grossRevenue: 0, operatingCost: 0, netProfit: 0, totalOrders: 0 };
       byDate[d].grossRevenue += r.gross_revenue;
       byDate[d].operatingCost += r.operating_cost;
@@ -328,7 +381,7 @@ app.get('/api/sales/list', authenticateToken, async (req, res) => {
       take: parseInt(limit, 10),
       skip: parseInt(offset, 10)
     });
-    const records = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, saleDate: typeof r.sale_date === 'string' ? r.sale_date.slice(0, 10) : r.sale_date.toISOString().slice(0, 10), totalOrders: r.total_orders, customerCount: r.customer_count, grossRevenue: r.gross_revenue, operatingCost: r.operating_cost, netProfit: r.net_profit, averageOrderValue: r.average_order_value, paymentSplit: { cash: r.payment_cash, card: r.payment_card, upi: r.payment_upi } }));
+    const records = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, saleDate: r.sale_date.slice(0, 10), totalOrders: r.total_orders, customerCount: r.customer_count, grossRevenue: r.gross_revenue, operatingCost: r.operating_cost, netProfit: r.net_profit, averageOrderValue: r.average_order_value, paymentSplit: { cash: r.payment_cash, card: r.payment_card, upi: r.payment_upi } }));
     res.json({ records, pagination: { total: totalCount, limit: parseInt(limit, 10), offset: parseInt(offset, 10) } });
   } catch (error) {
     console.error('Error fetching sales list:', error);
@@ -357,7 +410,7 @@ app.get('/api/inventory', authenticateToken, async (req, res) => {
     const statusOrder = { 'Critical': 1, 'Low Stock': 2, 'In Stock': 3 };
     rows.sort((a, b) => (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3));
 
-    const items = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: r.current_stock, minThreshold: r.min_threshold, maxCapacity: r.max_capacity, unit: r.unit, unitPrice: r.unit_price, status: r.status, lastRestocked: r.last_restocked ? (typeof r.last_restocked === 'string' ? r.last_restocked.slice(0, 10) : r.last_restocked.toISOString().slice(0, 10)) : null }));
+    const items = rows.map(r => ({ id: r.id, outletId: r.outlet_id, outletName: r.outlets.outlet_name, city: r.outlets.city, itemName: r.item_name, category: r.category, currentStock: r.current_stock, minThreshold: r.min_threshold, maxCapacity: r.max_capacity, unit: r.unit, unitPrice: r.unit_price, status: r.status, lastRestocked: r.last_restocked || null }));
     res.json(items);
   } catch (error) {
     console.error('Error fetching inventory:', error);
@@ -488,6 +541,206 @@ app.get('/api/staff/agent-insights', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching staff agent insights:', error);
     res.status(500).json({ error: 'Server error computing staff agent insights' });
+  }
+});
+
+// ==========================================
+// 6. MARKETING / CAMPAIGN INSIGHTS
+// ==========================================
+const marketing = require('./marketing');
+
+app.get('/api/marketing/campaigns', authenticateToken, async (req, res) => {
+  try {
+    const campaigns = marketing.loadCampaigns();
+    res.json(campaigns);
+  } catch (error) {
+    console.error('Error loading campaigns:', error);
+    res.status(500).json({ error: 'Server error loading campaigns' });
+  }
+});
+
+app.post('/api/marketing/campaigns', authenticateToken, async (req, res) => {
+  try {
+    const campaigns = marketing.loadCampaigns();
+    const nextId = campaigns.length > 0 ? Math.max(...campaigns.map(c=>c.id)) + 1 : 1;
+    const payload = { id: nextId, ...req.body };
+    campaigns.push(payload);
+    marketing.saveCampaigns(campaigns);
+    res.status(201).json(payload);
+  } catch (error) {
+    console.error('Error saving campaign:', error);
+    res.status(500).json({ error: 'Server error saving campaign' });
+  }
+});
+
+app.get('/api/marketing/roi', authenticateToken, async (req, res) => {
+  try {
+    const { campaignId } = req.query;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
+    const campaigns = marketing.loadCampaigns();
+    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
+    res.json(metrics);
+  } catch (error) {
+    console.error('Error computing campaign ROI:', error);
+    res.status(500).json({ error: 'Server error computing ROI' });
+  }
+});
+
+app.get('/api/marketing/recommendations', authenticateToken, async (req, res) => {
+  try {
+    const { campaignId } = req.query;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
+    const campaigns = marketing.loadCampaigns();
+    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
+    res.json({ recommendations: metrics.recommendations, metrics });
+  } catch (error) {
+    console.error('Error generating recommendations:', error);
+    res.status(500).json({ error: 'Server error computing recommendations' });
+  }
+});
+
+app.post('/api/marketing/predict', authenticateToken, async (req, res) => {
+  try {
+    const { campaignId, channel, budget } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId is required' });
+    const campaign = marketing.loadCampaigns().find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const targetBudget = Number(budget);
+    if (budget !== undefined && (!Number.isFinite(targetBudget) || targetBudget <= 0)) {
+      return res.status(400).json({ error: 'budget must be a positive number' });
+    }
+    const predictionCampaign = {
+      ...campaign,
+      cost: Number.isFinite(targetBudget) ? targetBudget : campaign.cost,
+      channels: channel ? [channel] : campaign.channels
+    };
+    res.json(await marketing.predictCampaignSuccess(prisma, predictionCampaign));
+  } catch (error) {
+    console.error('Error predicting campaign success:', error);
+    res.status(500).json({ error: 'Server error predicting campaign success' });
+  }
+});
+
+app.get('/api/marketing/social-connections', authenticateToken, (req, res) => {
+  res.json(marketing.loadSocialConnections());
+});
+
+app.put('/api/marketing/social-connections/:id', authenticateToken, (req, res) => {
+  const connection = marketing.updateSocialConnection(req.params.id, Boolean(req.body.connected));
+  if (!connection) return res.status(404).json({ error: 'Social channel not found' });
+  res.json(connection);
+});
+
+app.post('/api/marketing/social-posts', authenticateToken, (req, res) => {
+  const { message, channels, scheduledFor, campaignId } = req.body;
+  if (!message || !Array.isArray(channels) || channels.length === 0) {
+    return res.status(400).json({ error: 'A message and at least one channel are required' });
+  }
+  const connectedChannels = marketing.loadSocialConnections().filter((item) => item.connected).map((item) => item.id);
+  const unavailable = channels.filter((channel) => !connectedChannels.includes(channel));
+  if (unavailable.length) return res.status(400).json({ error: `Connect ${unavailable.join(', ')} before publishing.` });
+  res.status(201).json(marketing.createSocialPost({ message, channels, scheduledFor, campaignId }));
+});
+
+// Duplicate/alternate export endpoint to ensure CSV download works reliably.
+app.get('/api/marketing/download', authenticateToken, async (req, res) => {
+  console.log('[server] GET /api/marketing/download start');
+  try {
+    const { campaignId } = req.query;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
+    const campaigns = marketing.loadCampaigns();
+    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
+
+    const rows = [
+      ['Metric', 'Value'],
+      ['Campaign Name', campaign.name],
+      ['Campaign Start', campaign.startDate],
+      ['Campaign End', campaign.endDate],
+      ['Campaign Cost', metrics.cost],
+      ['Revenue Before', metrics.revenueBefore],
+      ['Revenue During', metrics.revenueDuring],
+      ['Incremental Revenue', metrics.incrementalRevenue],
+      ['ROI', metrics.roi],
+      ['Uplift Percent', metrics.upliftPercent]
+    ];
+
+    const channelRows = [['Channel', 'Budget Share', 'ROI Score', 'Recommendation']].concat(
+      metrics.channelInsights.map((ch) => [ch.channel, ch.budgetShare, ch.roiScore, ch.recommendation])
+    );
+
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+      + '\n\n'
+      + channelRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaign.id}-report.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Error exporting campaign report (download endpoint):', error);
+    res.status(500).json({ error: 'Server error exporting campaign report' });
+  }
+});
+
+app.get('/api/marketing/export', authenticateToken, async (req, res) => {
+  console.log('[server] GET /api/marketing/export start');
+  try {
+    const { campaignId } = req.query;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
+    const campaigns = marketing.loadCampaigns();
+    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
+
+    const rows = [
+      ['Metric', 'Value'],
+      ['Campaign Name', campaign.name],
+      ['Campaign Start', campaign.startDate],
+      ['Campaign End', campaign.endDate],
+      ['Campaign Cost', metrics.cost],
+      ['Revenue Before', metrics.revenueBefore],
+      ['Revenue During', metrics.revenueDuring],
+      ['Incremental Revenue', metrics.incrementalRevenue],
+      ['ROI', metrics.roi],
+      ['Uplift Percent', metrics.upliftPercent]
+    ];
+
+    const channelRows = [['Channel', 'Budget Share', 'ROI Score', 'Recommendation']].concat(
+      metrics.channelInsights.map((ch) => [ch.channel, ch.budgetShare, ch.roiScore, ch.recommendation])
+    );
+
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+      + '\n\n'
+      + channelRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaign.id}-report.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Error exporting campaign report:', error);
+    res.status(500).json({ error: 'Server error exporting campaign report' });
+  }
+});
+
+app.post('/api/marketing/schedules', authenticateToken, async (req, res) => {
+  try {
+    const { campaignId, frequency, nextRun } = req.body;
+    if (!campaignId || !frequency || !nextRun) {
+      return res.status(400).json({ error: 'campaignId, frequency, and nextRun are required' });
+    }
+    const campaigns = marketing.loadCampaigns();
+    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const schedule = marketing.createSchedule(Number(campaignId), frequency, nextRun);
+    res.status(201).json(schedule);
+  } catch (error) {
+    console.error('Error scheduling campaign report:', error);
+    res.status(500).json({ error: 'Server error scheduling campaign report' });
   }
 });
 

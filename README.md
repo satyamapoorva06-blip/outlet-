@@ -1,168 +1,109 @@
-# 🚀 FranchiseOps AI — Enterprise Multi-Agent Franchise Operations & Analytics Platform
+# FranchiseOps AI — Enterprise Agentic Operations & Analytics
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=flat-square&logo=react)](https://react.dev/)
-[![Express.js](https://img.shields.io/badge/Express-5.2-000000?style=flat-square&logo=express)](https://expressjs.com/)
-[![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-4169E1?style=flat-square&logo=postgresql)](https://supabase.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
-
-**FranchiseOps AI** is an enterprise-grade multi-agent operations and analytics platform designed to monitor outlet performance, model sales & profit trends, evaluate operational efficiency, and deliver dynamic mathematical AI insights for franchise networks.
+FranchiseOps AI is a multi-agent intelligent franchise operations platform designed to monitor outlet sales, run trend forecasting, measure operational efficiency, and deliver dynamic mathematical AI insights.
 
 ---
 
-## 🌟 Key Features & Capabilities
+## ✨ Features
 
-- 🤖 **10-Step Multi-Agent Workflow**:
-  1. Data Aggregation & Ingestion
-  2. Data Cleaning & Schema Validation
-  3. Store Audit & Performance Monitoring
-  4. Inventory & Stock Tracking
-  5. Staff Scheduling & Efficiency
-  6. Automated Marketing Optimization
-  7. Audit Log Analysis
-  8. Intelligence & Mathematical Insight Engine
-  9. Actionable Recommendations
-  10. Real-time Escalation & Alerts
-- 📊 **Interactive Analytics Dashboard**:
-  - Store Audit Logs with real-time searching, sorting, and pagination.
-  - Interactive Recharts area & bar charts visualizing Gross Revenue, Operating Costs, Net Profit, and Payment Method Splits (UPI, Card, Cash).
-  - Multi-outlet comparison view for regional performance evaluation.
-- 📐 **Dynamic Mathematical Insight Engine**:
-  - **Revenue Momentum**: Linear regression slope calculation ($\beta_1 = \frac{n\sum x_i y_i - \sum x_i \sum y_i}{n\sum x_i^2 - (\sum x_i)^2}$) tracking growth trajectories.
-  - **Revenue Volatility**: Coefficient of Variation ($CV = \frac{\sigma}{\mu} \times 100$) evaluating sales stability.
-  - **Period-over-Period Growth**: Comparative analysis across split date windows.
-  - **Profit Margin Drift**: Regression slope tracking margin shifts over time.
-  - **Peak Revenue Detection**: Z-Score outlier detection ($z = \frac{x_i - \mu}{\sigma}$).
-- 🔄 **Fallback Standalone Demo Mode**:
-  - Integrated deterministic fallback dataset ensures full UI usability even without an active database connection.
-- 🔐 **JWT Authentication & Role Control**:
-  - Role-based authorization for Store Managers, Regional Directors, and Franchise Owners.
+- **Collapsible Sidebar Workflow Navigation**: Clean 10-step agentic process workflow sidebar (Data Aggregation, Validation, Performance Agent, Inventory, Staff, Marketing, Audit, Intelligence Engine, Recommendations, Alerts).
+- **Outlet Performance Agent Dashboard**:
+  - **Monitor Daily Sales**: Interactive search, column sorting, pagination, and granular store audit logs.
+  - **Revenue & Profit Trends**: Visual daily trends (Recharts Area & Bar charts) for Gross Revenue, Operating Costs, Net Profit, and Payment Split (UPI, Card, Cash).
+- **Dynamic AI Revenue Insights Engine**:
+  - **Revenue Momentum**: Linear regression slope (\(\beta_1 = \frac{n\sum x_i y_i - \sum x_i \sum y_i}{n\sum x_i^2 - (\sum x_i)^2}\)) measuring daily growth rate.
+  - **Revenue Volatility**: Coefficient of Variation (\(CV = \frac{\sigma}{\mu} \times 100\)) rating sales consistency.
+  - **Period-over-Period Growth**: First-half vs second-half average comparison (\(\frac{H_2 - H_1}{H_1} \times 100\)).
+  - **Profit Margin Drift**: Regression slope of daily profit margin percentages.
+  - **Peak Revenue Detection**: Outlier detection using Z-scores (\(z = \frac{x_i - \mu}{\sigma}\)).
+  - **Cost Ratio Efficiency**: Operating cost as % of gross revenue drift.
+- **Built-in Demo / Standalone Fallback Mode**: Automatically uses a rich local dataset if the backend API is offline so you can run and test the frontend immediately.
 
 ---
 
-## 🏗️ Architecture & Technology Stack
+## 🛠️ Prerequisites
 
-```text
-FranchiseOps-AI/
-├── frontend/                   # Client-side Next.js 16 Application
-│   ├── app/                    # Next.js App Router (Pages, Layouts, Components)
-│   │   ├── components/         # Reusable UI Components & Modals
-│   │   ├── lib/                # API client (Axios with interceptors)
-│   │   └── types/              # TypeScript interface definitions
-│   ├── public/                 # Static branding assets
-│   ├── .env.example            # Environment template for Frontend
-│   └── package.json
-├── backend/                    # Server-side REST API & Database Layer
-│   ├── server.js               # Express 5 server & API routes
-│   ├── seed.js                 # Database seeding script
-│   ├── prisma/                 # Prisma ORM Schema & Migration definitions
-│   │   └── schema.prisma       # PostgreSQL Schema definition
-│   ├── .env.example            # Environment template for Backend
-│   └── package.json
-├── .gitignore                  # Root Git Ignore configuration
-└── README.md                   # Project Documentation
-```
+Make sure you have the following installed on your system:
 
-### Stack Breakdown:
-- **Frontend**: Next.js 16 (App Router), React 19, TailwindCSS, Recharts, Lucide Icons, Axios.
-- **Backend**: Node.js, Express.js 5, Prisma ORM 6, PostgreSQL (Supabase Connection Pooling / Direct).
-- **Authentication**: JSON Web Tokens (JWT) & bcrypt password hashing.
+- [Node.js](https://nodejs.org/) (v18.x or higher recommended)
+- `npm` (v9.x or higher)
 
 ---
 
-## ⚙️ Environment Configuration
+## 🚀 Quick Start Guide
 
-Before running the application, set up environment variables for both backend and frontend services.
+Open a new VS Code terminal after opening this folder. This workspace selects
+**Command Prompt** as its default terminal so the standard `npm` commands below
+work even when PowerShell script execution is restricted.
 
-### Backend (`/backend/.env`)
-Copy `backend/.env.example` to `backend/.env`:
-```env
-PORT=5000
-JWT_SECRET=your_secure_jwt_secret_key
-DATABASE_URL="postgresql://postgres:password@aws-0-region.pooler.supabase.com:6543/postgres?pgbouncer=true"
-```
+### Option 1: Run Frontend Only (Demo Mode)
 
-### Frontend (`/frontend/.env.local`)
-Copy `frontend/.env.example` to `frontend/.env.local`:
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- **Node.js**: `v18.x` or higher
-- **npm**: `v9.x` or higher
-- **PostgreSQL Database** (e.g. Supabase, Neon, or local instance)
-
-### 1. Backend Setup & Database Migration
+The frontend automatically falls back to an built-in deterministic demo dataset if the backend server is not running.
 
 ```bash
-# Navigate to backend directory
+# 1. Navigate to the frontend folder
+cd frontend
+
+# 2. Install dependencies
+npm install
+
+# 3. Start the Next.js development server
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser to view the application.
+
+---
+
+### Option 2: Run Full Stack (Frontend + Backend)
+
+#### 1. Start the Backend API Server
+
+```bash
+# Navigate to the backend directory
 cd backend
 
 # Install dependencies
 npm install
 
-# Generate Prisma Client
-npm run prisma:generate   # or: npx prisma generate --schema prisma/schema.prisma
-
-# Push database schema to PostgreSQL
-npx prisma db push
-
-# (Optional) Seed initial demo outlets & sales data
+# (Optional) Seed the database with Prisma
 npm run seed
 
-# Start development server (runs on http://localhost:5000)
-npm start
+# Start the Node.js Express server (runs on http://localhost:5000)
+npm run start
 ```
 
-### 2. Frontend Setup
+#### 2. Start the Frontend Application
+
+In a separate terminal window:
 
 ```bash
-# Open a new terminal and navigate to frontend directory
 cd frontend
-
-# Install dependencies
-npm install
-
-# Start Next.js development server (runs on http://localhost:3000)
 npm run dev
 ```
 
-Visit **[http://localhost:3000](http://localhost:3000)** in your browser.
+Open [http://localhost:3000](http://localhost:3000). The frontend will automatically connect to `http://localhost:5000/api`.
 
 ---
 
-## 🔌 API Endpoints Summary
+## 📁 Project Structure
 
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :---: |
-| `POST` | `/api/auth/signup` | Register a new franchise user | ❌ |
-| `POST` | `/api/auth/login` | Authenticate & obtain JWT | ❌ |
-| `GET` | `/api/outlets` | List all franchise outlets | ✅ |
-| `GET` | `/api/outlets/compare` | Compare multi-outlet financial metrics | ✅ |
-| `GET` | `/api/sales/metrics` | Aggregate sales summary & AI math metrics | ✅ |
-| `GET` | `/api/sales/trends` | Daily revenue, cost & profit trends | ✅ |
-| `GET` | `/api/sales/list` | Paginated sales records for store audit | ✅ |
-| `GET` | `/api/inventory` | Real-time stock status & threshold tracking | ✅ |
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git checkout main && git merge feature/amazing-feature`)
-5. Open a Pull Request
+```text
+FranchiseOpsAI/
+├── frontend/             # Next.js 16 (React 19, TailwindCSS, Recharts)
+│   ├── app/              # Main App Router & page dashboard
+│   ├── public/           # Static assets
+│   └── package.json
+├── backend/              # Node.js + Express REST API
+│   ├── server.js         # Express server & endpoints
+│   ├── seed.js           # Database seed script
+│   ├── prisma/           # Prisma ORM schema
+│   └── package.json
+└── README.md             # Project documentation
+```
 
 ---
 
 ## 📜 License
 
-Distributed under the **ISC License**. See `LICENSE` for more information.
+This project is licensed under the ISC License.

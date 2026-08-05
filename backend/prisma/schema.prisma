@@ -4,8 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./database.sqlite"
 }
 
 model outlets {
@@ -31,7 +31,7 @@ model outlets {
 model sales {
   id                  Int       @id @default(autoincrement())
   outlet_id           Int
-  sale_date           DateTime
+  sale_date           String
   total_orders        Int
   customer_count      Int
   gross_revenue       Float
@@ -68,7 +68,7 @@ model inventory {
   unit           String
   unit_price     Float
   status         String    @default("In Stock")
-  last_restocked DateTime?
+  last_restocked String?
   created_at     DateTime? @default(now())
   updated_at     DateTime? @default(now())
   outlets        outlets   @relation(fields: [outlet_id], references: [id], onDelete: Cascade)

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
 
 interface CompareItem {
@@ -42,26 +42,24 @@ export default function CompareModal({ isOpen, onClose, selectedLocationIds }: C
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen && selectedLocationIds.length > 0) {
-      fetchComparison();
-    }
-  }, [isOpen, selectedLocationIds]);
-
-  const fetchComparison = async () => {
+  const fetchComparison = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(
-        `/outlets/compare?ids=${selectedLocationIds.join(",")}`
-      );
+      const res = await api.get(`/outlets/compare?ids=${selectedLocationIds.join(",")}`);
       setData(res.data);
-    } catch (err: any) {
+    } catch {
       setError("Failed to load store comparison data");
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedLocationIds]);
+
+  useEffect(() => {
+    if (isOpen && selectedLocationIds.length > 0) {
+      void fetchComparison();
+    }
+  }, [fetchComparison, isOpen, selectedLocationIds.length]);
 
   if (!isOpen) return null;
 

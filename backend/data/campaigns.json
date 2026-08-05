@@ -1,0 +1,82 @@
+[
+  {
+    "id": 1,
+    "name": "Weekend Discount Blast",
+    "startDate": "2026-07-10",
+    "endDate": "2026-07-16",
+    "cost": 25000,
+    "attributedRevenue": 67000,
+    "channels": ["facebook", "instagram", "email"],
+    "outletIds": [1,2,3]
+  },
+  {
+    "id": 2,
+    "name": "Monsoon Promo",
+    "startDate": "2026-07-20",
+    "endDate": "2026-07-26",
+    "cost": 18000,
+    "attributedRevenue": 41000,
+    "channels": ["google", "sms"],
+    "outletIds": [4,5]
+  },
+  {
+    "id": 3,
+    "name": "Friday Family Feast",
+    "startDate": "2026-06-05",
+    "endDate": "2026-06-11",
+    "cost": 16500,
+    "attributedRevenue": 48000,
+    "channels": ["instagram", "facebook", "google"],
+    "outletIds": [1, 2]
+  },
+  {
+    "id": 4,
+    "name": "Midweek Lunch Saver",
+    "startDate": "2026-06-15",
+    "endDate": "2026-06-21",
+    "cost": 12000,
+    "attributedRevenue": 35000,
+    "channels": ["sms", "email"],
+    "outletIds": [3, 4]
+  },
+  {
+    "id": 5,
+    "name": "Monsoon Comfort Combo",
+    "startDate": "2026-06-22",
+    "endDate": "2026-06-28",
+    "cost": 22000,
+    "attributedRevenue": 63000,
+    "channels": ["google", "instagram", "sms"],
+    "outletIds": [1, 3, 5]
+  },
+  {
+    "id": 6,
+    "name": "Weekend Delivery Drive",
+    "startDate": "2026-07-03",
+    "endDate": "2026-07-09",
+    "cost": 19500,
+    "attributedRevenue": 50500,
+    "channels": ["facebook", "email", "sms"],
+    "outletIds": [2, 4, 5]
+  },
+  {
+    "id": 7,
+    "name": "Loyalty Rewards Week",
+    "startDate": "2026-07-17",
+    "endDate": "2026-07-23",
+    "cost": 14000,
+    "attributedRevenue": 47000,
+    "channels": ["email", "sms", "google"],
+    "outletIds": [1, 2, 3, 4, 5]
+  },
+  {
+    "id": 8,
+    "name": "Month-End Mega Offer",
+    "startDate": "2026-07-21",
+    "endDate": "2026-07-27",
+    "cost": 30000,
+    "attributedRevenue": 88000,
+    "channels": ["google", "facebook", "instagram", "email"],
+    "outletIds": [1, 2, 3, 4, 5]
+  }
+]
