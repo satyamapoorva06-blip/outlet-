@@ -437,12 +437,19 @@ const INITIAL_WORKERS: Worker[] = [
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedStep, setSelectedStep] = useState(5); // Default to Worker Attendance / Staff Agent
+  const [sidebarSearch, setSidebarSearch] = useState("");
+
+  // Live Clock & Command Palette States
+  const [currentTime, setCurrentTime] = useState("");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
 
   // Worker Attendance State
   const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
   const [selectedWorkerModal, setSelectedWorkerModal] = useState<Worker | null>(null);
   const [staffSearch, setStaffSearch] = useState("");
   const [staffOutletFilter, setStaffOutletFilter] = useState("all");
+  const [staffShiftFilter, setStaffShiftFilter] = useState("all");
 
   // Filter States
   const [selectedOutlet, setSelectedOutlet] = useState("all");
@@ -464,6 +471,396 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserState | null>(null);
+
+  // Toast Notification System
+  const [toast, setToast] = useState<{ message: string; type: "success" | "info" | "warning" } | null>(null);
+  const showToast = (message: string, type: "success" | "info" | "warning" = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // Step 1: Live Ingestion Stream State
+  const [isSyncingDb, setIsSyncingDb] = useState(false);
+  const [isStreamingLiveEvents, setIsStreamingLiveEvents] = useState(true);
+  const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
+  const [csvRawInput, setCsvRawInput] = useState("");
+  const [liveEventsLog, setLiveEventsLog] = useState([
+    { id: 1, time: "19:18:04", text: "POS Ingestion Pipe #4: Processed Sale #99102 for ₹850.00 at Bengaluru Central", type: "pos" },
+    { id: 2, time: "19:18:01", text: "Inventory Sensor Depletion: -2.5 kg Mozzarella Cheese (Hyderabad Tech Park)", type: "inventory" },
+    { id: 3, time: "19:17:58", text: "Staff Shift Punch: Shift Started for Ritu Sharma (EMP-BEN-089) at 08:30 AM", type: "shift" },
+    { id: 4, time: "19:17:52", text: "Zomato Marketing Webhook: +1 Promo Conversion recorded (Code: MONSOON20)", type: "marketing" },
+  ]);
+
+  // Step 3: Sales Entry Modal State
+  const [showRecordSalesModal, setShowRecordSalesModal] = useState(false);
+  const [newSalesForm, setNewSalesForm] = useState({
+    outletId: "1",
+    saleDate: new Date().toISOString().slice(0, 10),
+    grossRevenue: "45000",
+    operatingCost: "24000",
+    totalOrders: "210",
+    customerCount: "250"
+  });
+
+  // Step 5: Worker Clock In & Registration Modals
+  const [showClockInModal, setShowClockInModal] = useState(false);
+  const [clockInForm, setClockInForm] = useState({
+    workerId: 101,
+    status: "Present" as "Present" | "Late" | "Absent" | "Half Day",
+    clockIn: "08:45 AM",
+    clockOut: "05:30 PM",
+    deduction: "0",
+    deductionReason: ""
+  });
+
+  const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
+  const [newWorkerForm, setNewWorkerForm] = useState({
+    name: "",
+    role: "Barista & Cashier",
+    outletName: "Bengaluru Central",
+    phone: "+91 98765 43210",
+    email: "",
+    baseSalary: "28000",
+    bonus: "2000"
+  });
+
+  // Step 6: Marketing & Scenario Simulator State
+  const [showMarketingModal, setShowMarketingModal] = useState(false);
+  const [simulatedMarketingBudget, setSimulatedMarketingBudget] = useState(25000);
+  const [marketingCampaigns, setMarketingCampaigns] = useState([
+    { id: 1, name: "Weekend Monsoon Combo Offer", channel: "Zomato & Swiggy Promo", budget: 15000, spend: 11200, conversions: 430, revenueGenerated: 68800, roi: "514%", status: "Active" },
+    { id: 2, name: "Local Office Park Geofence Ad", channel: "Google Local Ads", budget: 20000, spend: 18500, conversions: 620, revenueGenerated: 99200, roi: "436%", status: "Active" },
+    { id: 3, name: "Student Loyalty Discount Card", channel: "In-Store QR Code", budget: 5000, spend: 3200, conversions: 290, revenueGenerated: 34800, roi: "987%", status: "Completed" },
+  ]);
+  const [newMarketingForm, setNewMarketingForm] = useState({ name: "", channel: "Google Ads", budget: "15000" });
+
+  // Step 7: Audit State
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [storeAudits, setStoreAudits] = useState([
+    { id: 1, outletName: "Bengaluru Central", auditDate: "2026-07-28", auditor: "Ananya Roy", hygieneScore: 98, safetyScore: 96, uniformSopScore: 94, totalScore: 96, status: "Passed", notes: "Excellent kitchen cleanliness and temperature control logs." },
+    { id: 2, outletName: "Hyderabad Tech Park", auditDate: "2026-07-26", auditor: "Suresh Menon", hygieneScore: 92, safetyScore: 90, uniformSopScore: 88, totalScore: 90, status: "Passed with Advisory", notes: "Minor delay in staff uniform inspection records." },
+    { id: 3, outletName: "Chennai Marina", auditDate: "2026-07-24", auditor: "Ananya Roy", hygieneScore: 85, safetyScore: 88, uniformSopScore: 82, totalScore: 85, status: "Re-Audit Scheduled", notes: "Refrigeration logs missing 1 morning entry." },
+  ]);
+  const [newAuditForm, setNewAuditForm] = useState({ outletName: "Bengaluru Central", auditor: "Lead Auditor", hygieneScore: "95", safetyScore: "92", uniformSopScore: "94", notes: "Routine store inspection passed." });
+
+  // Step 8: AI Scenario Simulator
+  const [simulatedRainImpact, setSimulatedRainImpact] = useState(15);
+
+  // Step 9: Strategy Recommendations State
+  const [strategyCategoryFilter, setStrategyCategoryFilter] = useState("all");
+  const [strategyRecommendations, setStrategyRecommendations] = useState([
+    { id: 1, title: "Shift Baristas to Morning Peak Rush", outlet: "Bengaluru Central", category: "Labor Efficiency", impact: "+₹14,500/week", confidence: "94%", desc: "Move 2 staff members from 14:00 slow shift to 08:30 morning peak to reduce queue times.", applied: false },
+    { id: 2, title: "Automate Reorder for Espresso Beans", outlet: "All Outlets", category: "Inventory Cover", impact: "Zero Stockouts", confidence: "98%", desc: "Set auto-reorder threshold to 30kg based on 8.5kg/day burn velocity.", applied: true },
+    { id: 3, title: "Launch Weekend Combo Promo in Chennai", outlet: "Chennai Marina", category: "Revenue Growth", impact: "+18% Weekend Sales", confidence: "89%", desc: "Activate weekend 15% combo discount on bakery items during 16:00-19:00.", applied: false },
+  ]);
+
+  // Step 10: System Alerts State
+  const [alertFilter, setAlertFilter] = useState("all");
+  const [systemAlerts, setSystemAlerts] = useState([
+    { id: 101, level: "critical", title: "Mozzarella Cheese Deficit (< 10%)", desc: "Stock depleted to 4.2 kg at Hyderabad Tech Park outlet.", outlet: "Hyderabad Tech Park", resolved: false },
+    { id: 102, level: "warning", title: "Staff Late Clock-in Cluster Detected", desc: "3 workers recorded > 30 min delays this week in Chennai Marina.", outlet: "Chennai Marina", resolved: false },
+    { id: 103, level: "info", title: "Weekly Revenue Benchmark Exceeded", desc: "Bengaluru Central gross revenue reached ₹4.2L (+14% vs target).", outlet: "Bengaluru Central", resolved: false }
+  ]);
+
+  // Live Digital Clock & Keyboard Shortcuts
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + " IST · " + now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }));
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+      }
+      if (e.key === "Escape") {
+        setCommandPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  // Live Telemetry Event Simulator (Step 1)
+  useEffect(() => {
+    if (!isStreamingLiveEvents) return;
+    const interval = setInterval(() => {
+      const outletsArr = ["Bengaluru Central", "Hyderabad Tech Park", "Chennai Marina", "Mumbai Andheri", "Pune Hinjawadi"];
+      const randOutlet = outletsArr[Math.floor(Math.random() * outletsArr.length)];
+      const randAmount = (Math.floor(Math.random() * 800) + 250).toFixed(2);
+      const randOrder = Math.floor(Math.random() * 90000) + 10000;
+      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setLiveEventsLog(prev => [
+        { id: Date.now(), time: nowStr, text: `POS Telemetry Stream: Sale #${randOrder} recorded for ₹${randAmount} at ${randOutlet}`, type: "pos" },
+        ...prev.slice(0, 7)
+      ]);
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [isStreamingLiveEvents]);
+
+  // Inline Actions for Workers: Approve Bonus & Waive Salary Cut
+  const handleGiveWorkerBonus = (workerId: number) => {
+    setWorkers(prev => prev.map(w => {
+      if (w.id === workerId) {
+        const bonusAmt = 1000;
+        showToast(`Approved ₹${bonusAmt.toLocaleString()} performance bonus for ${w.name}!`, "success");
+        return { ...w, bonus: w.bonus + bonusAmt };
+      }
+      return w;
+    }));
+  };
+
+  const handleWaiveSalaryCut = (workerId: number) => {
+    setWorkers(prev => prev.map(w => {
+      if (w.id === workerId) {
+        showToast(`Waived salary cut of ₹${w.salaryCut} for ${w.name}!`, "success");
+        return { ...w, salaryCut: 0, salaryCutReason: "Salary cut waived by Operations Manager" };
+      }
+      return w;
+    }));
+  };
+
+  // Handler: Export Filtered Sales to CSV
+  const exportSalesToCsv = () => {
+    if (salesRecords.length === 0) {
+      showToast("No sales records available to export.", "warning");
+      return;
+    }
+    const headers = ["ID", "Outlet Name", "City", "Sale Date", "Total Orders", "Customer Count", "Gross Revenue (INR)", "Operating Cost (INR)", "Net Profit (INR)", "Average Order Value (INR)"];
+    const rows = salesRecords.map(r => [
+      r.id, `"${r.outletName}"`, `"${r.city}"`, r.saleDate, r.totalOrders, r.customerCount, r.grossRevenue, r.operatingCost, r.netProfit, r.averageOrderValue
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `FranchiseOps_Sales_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Sales Report CSV downloaded successfully!", "success");
+  };
+
+  // Handler: Database Sync Simulation
+  const handleDatabaseSync = () => {
+    setIsSyncingDb(true);
+    showToast("Pinging multi-source POS & IoT sensors...", "info");
+    setTimeout(() => {
+      setIsSyncingDb(false);
+      showToast("Telemetry Sync Complete: 5 Franchise Locations fully updated!", "success");
+    }, 1200);
+  };
+
+  // Handler: CSV Payload Upload
+  const handleCsvUploadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csvRawInput.trim()) {
+      showToast("Please enter or paste CSV content.", "warning");
+      return;
+    }
+    const lines = csvRawInput.trim().split("\n");
+    let count = 0;
+    const newRecords: any[] = [];
+    lines.forEach((line, idx) => {
+      if (idx === 0 && line.toLowerCase().includes("date")) return;
+      const parts = line.split(",");
+      if (parts.length >= 3) {
+        count++;
+        const rev = parseFloat(parts[2] || "35000");
+        const cost = parseFloat(parts[3] || "20000");
+        newRecords.push({
+          id: Date.now() + idx,
+          outletId: 1,
+          outletName: parts[0]?.trim() || "Bengaluru Central",
+          city: "Bengaluru",
+          saleDate: parts[1]?.trim() || new Date().toISOString().slice(0, 10),
+          totalOrders: parseInt(parts[4] || "180", 10),
+          customerCount: parseInt(parts[5] || "210", 10),
+          grossRevenue: rev,
+          operatingCost: cost,
+          netProfit: rev - cost,
+          averageOrderValue: 185,
+          paymentSplit: { cash: rev * 0.2, card: rev * 0.3, upi: rev * 0.5 }
+        });
+      }
+    });
+    setSalesRecords(prev => [...newRecords, ...prev]);
+    setShowCsvUploadModal(false);
+    setCsvRawInput("");
+    showToast(`Successfully ingested ${count || 1} sales telemetry records from CSV!`, "success");
+  };
+
+  // Handler: Manual Sales Entry
+  const handleRecordSalesSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const rev = parseFloat(newSalesForm.grossRevenue);
+    const cost = parseFloat(newSalesForm.operatingCost);
+    const orders = parseInt(newSalesForm.totalOrders, 10);
+    const selectedO = outlets.find(o => String(o.id) === String(newSalesForm.outletId)) || { outlet_name: "Bengaluru Central", city: "Bengaluru" };
+
+    const newRecord = {
+      id: Date.now(),
+      outletId: parseInt(newSalesForm.outletId, 10),
+      outletName: selectedO.outlet_name,
+      city: selectedO.city,
+      saleDate: newSalesForm.saleDate,
+      totalOrders: orders,
+      customerCount: parseInt(newSalesForm.customerCount, 10),
+      grossRevenue: rev,
+      operatingCost: cost,
+      netProfit: rev - cost,
+      averageOrderValue: orders > 0 ? parseFloat((rev / orders).toFixed(2)) : 0,
+      paymentSplit: { cash: rev * 0.2, card: rev * 0.3, upi: rev * 0.5 }
+    };
+
+    setSalesRecords(prev => [newRecord, ...prev]);
+    try { axios.post(`${BACKEND_URL}/sales/create`, newRecord); } catch {}
+
+    setShowRecordSalesModal(false);
+    showToast(`Recorded ₹${rev.toLocaleString("en-IN")} sales for ${selectedO.outlet_name}!`, "success");
+  };
+
+  // Handler: Clock In / Out Submit
+  const handleClockInSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const wId = clockInForm.workerId;
+    const deductionVal = parseFloat(clockInForm.deduction || "0");
+
+    setWorkers(prev => prev.map(w => {
+      if (w.id === wId) {
+        const newAttHistory = [
+          {
+            date: new Date().toISOString().slice(0, 10),
+            shift: "Day Shift (09:00 - 18:00)",
+            clockIn: clockInForm.clockIn,
+            clockOut: clockInForm.clockOut,
+            totalHours: 8.5,
+            status: clockInForm.status,
+            bonusEarned: clockInForm.status === "Present" ? 300 : 0,
+            deduction: deductionVal,
+            deductionReason: clockInForm.deductionReason
+          },
+          ...w.attendanceHistory
+        ];
+        return {
+          ...w,
+          status: clockInForm.status,
+          clockIn: clockInForm.clockIn,
+          clockOut: clockInForm.clockOut,
+          salaryCut: w.salaryCut + deductionVal,
+          salaryCutReason: clockInForm.deductionReason || w.salaryCutReason,
+          attendanceHistory: newAttHistory
+        };
+      }
+      return w;
+    }));
+
+    setShowClockInModal(false);
+    showToast(`Attendance & punch clock updated!`, "success");
+  };
+
+  // Handler: Register New Worker
+  const handleAddWorkerSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkerForm.name.trim()) return;
+
+    const newW: Worker = {
+      id: Date.now(),
+      name: newWorkerForm.name,
+      employeeId: `EMP-${Math.floor(100 + Math.random() * 900)}`,
+      role: newWorkerForm.role,
+      outletName: newWorkerForm.outletName,
+      phone: newWorkerForm.phone,
+      email: newWorkerForm.email || `${newWorkerForm.name.toLowerCase().replace(" ", ".")}@franchiseops.ai`,
+      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80`,
+      baseSalary: parseFloat(newWorkerForm.baseSalary || "28000"),
+      bonus: parseFloat(newWorkerForm.bonus || "2000"),
+      salaryCut: 0,
+      salaryCutReason: "No deductions recorded",
+      clockIn: "09:00 AM",
+      clockOut: "06:00 PM",
+      status: "Present",
+      attendanceHistory: [
+        { date: new Date().toISOString().slice(0, 10), shift: "Day (09:00 - 18:00)", clockIn: "09:00 AM", clockOut: "06:00 PM", totalHours: 9.0, status: "Present", bonusEarned: 200, deduction: 0 }
+      ]
+    };
+
+    setWorkers(prev => [newW, ...prev]);
+    setShowAddWorkerModal(false);
+    setNewWorkerForm({ name: "", role: "Barista & Cashier", outletName: "Bengaluru Central", phone: "+91 98765 43210", email: "", baseSalary: "28000", bonus: "2000" });
+    showToast(`Registered new staff worker ${newW.name}!`, "success");
+  };
+
+  // Handler: Launch Marketing Campaign
+  const handleLaunchCampaignSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMarketingForm.name.trim()) return;
+
+    const b = parseFloat(newMarketingForm.budget || "10000");
+    const newCamp = {
+      id: Date.now(),
+      name: newMarketingForm.name,
+      channel: newMarketingForm.channel,
+      budget: b,
+      spend: b * 0.3,
+      conversions: Math.round(b / 30),
+      revenueGenerated: b * 4.2,
+      roi: "420%",
+      status: "Active"
+    };
+
+    setMarketingCampaigns(prev => [newCamp, ...prev]);
+    try { axios.post(`${BACKEND_URL}/marketing/create`, newCamp); } catch {}
+    setShowMarketingModal(false);
+    setNewMarketingForm({ name: "", channel: "Google Ads", budget: "15000" });
+    showToast(`Launched marketing campaign "${newCamp.name}"!`, "success");
+  };
+
+  // Handler: Log Store Audit
+  const handleLogAuditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const h = parseInt(newAuditForm.hygieneScore, 10);
+    const s = parseInt(newAuditForm.safetyScore, 10);
+    const u = parseInt(newAuditForm.uniformSopScore, 10);
+    const avg = Math.round((h + s + u) / 3);
+
+    const newAudit = {
+      id: Date.now(),
+      outletName: newAuditForm.outletName,
+      auditDate: new Date().toISOString().slice(0, 10),
+      auditor: newAuditForm.auditor,
+      hygieneScore: h,
+      safetyScore: s,
+      uniformSopScore: u,
+      totalScore: avg,
+      status: avg >= 90 ? "Passed" : avg >= 80 ? "Passed with Advisory" : "Re-Audit Scheduled",
+      notes: newAuditForm.notes
+    };
+
+    setStoreAudits(prev => [newAudit, ...prev]);
+    try { axios.post(`${BACKEND_URL}/audits/create`, newAudit); } catch {}
+    setShowAuditModal(false);
+    showToast(`Logged store audit inspection for ${newAudit.outletName} (Score: ${avg}%)!`, "success");
+  };
+
+  // Handler: Apply Strategy Recommendation
+  const handleApplyRecommendation = (recId: number) => {
+    setStrategyRecommendations(prev => prev.map(r => r.id === recId ? { ...r, applied: true } : r));
+    try { axios.post(`${BACKEND_URL}/recommendations/apply`, { recId }); } catch {}
+    showToast(`Applied AI strategy recommendation! Operational parameters updated.`, "success");
+  };
+
+  // Handler: Resolve Alert
+  const handleResolveAlert = (alertId: number) => {
+    setSystemAlerts(prev => prev.map(a => a.id === alertId ? { ...a, resolved: true } : a));
+    showToast(`Alert resolved & archived by operator.`, "info");
+  };
 
   // Check auth user from localStorage
   useEffect(() => {
@@ -687,9 +1084,22 @@ export default function Home() {
             </button>
           </div>
 
+          {/* Sidebar Search Bar */}
+          {sidebarOpen && (
+            <div className="px-3 pt-3">
+              <input
+                type="text"
+                value={sidebarSearch}
+                onChange={e => setSidebarSearch(e.target.value)}
+                placeholder="Search 10 workflow steps..."
+                className="w-full text-xs bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          )}
+
           {/* Section Label */}
           {sidebarOpen && (
-            <div className="px-4 pt-4 pb-1 flex items-center justify-between">
+            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
               <p className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Agent Workflow Modules</p>
               <span className="text-[9px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">10 Active</span>
             </div>
@@ -697,7 +1107,7 @@ export default function Home() {
 
           {/* Workflow Steps List */}
           <nav className="flex-1 overflow-y-auto py-2 space-y-1 px-2.5">
-            {WORKFLOW_STEPS.map(step => {
+            {WORKFLOW_STEPS.filter(s => sidebarSearch.trim() === "" || s.name.toLowerCase().includes(sidebarSearch.toLowerCase()) || s.desc.toLowerCase().includes(sidebarSearch.toLowerCase())).map(step => {
               const isSelected = selectedStep === step.id;
               return (
                 <button
@@ -735,9 +1145,9 @@ export default function Home() {
             <div className="px-4 py-3 border-t border-white/10 bg-slate-950/40">
               <div className="flex items-center space-x-2 text-[10px] text-slate-400">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="font-semibold text-slate-300">Live Telemetry Stream Active</span>
+                <span className="font-semibold text-slate-300">Live API Server: Online</span>
               </div>
-              <p className="text-[9px] text-slate-500 mt-0.5">Last Sync: 2026-07-31 10:48 IST</p>
+              <p className="text-[9px] text-slate-500 mt-0.5">{currentTime || "Live Telemetry Connected"}</p>
             </div>
           )}
         </div>
@@ -768,6 +1178,18 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-3">
+              {/* Quick Spotlight Command Search */}
+              <button
+                onClick={() => setCommandPaletteOpen(true)}
+                className="hidden md:flex items-center space-x-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 transition-all shadow-inner"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span>Quick Search...</span>
+                <kbd className="bg-white px-1.5 py-0.5 rounded border text-[10px] font-mono text-slate-400">⌘K</kbd>
+              </button>
+
               <button
                 onClick={() => setSelectedStep(5)}
                 className={`flex items-center space-x-1.5 text-xs font-bold px-3.5 py-1.5 rounded-full shadow-sm transition-all ${
@@ -847,10 +1269,26 @@ export default function Home() {
                     <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Staff Attendance, Start/End Timings & Salary Tracker</h2>
                     <p className="text-xs text-slate-600 mt-1">Track daily clock-in/clock-out timings, inspect attendance logs, bonus allocations, and salary cuts with reasons.</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3.5 py-2 rounded-xl">
-                      ✓ 95% Shift Attendance Rate
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setShowClockInModal(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Punch Clock In / Out</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowAddWorkerModal(true)}
+                      className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                    >
+                      <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                      </svg>
+                      <span>Register New Worker</span>
+                    </button>
                   </div>
                 </div>
 
@@ -972,12 +1410,30 @@ export default function Home() {
                               </td>
 
                               <td className="px-5 py-4 text-right">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setSelectedWorkerModal(worker); }}
-                                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-sm transition-all"
-                                >
-                                  View Full History
-                                </button>
+                                <div className="flex items-center justify-end space-x-1.5" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleGiveWorkerBonus(worker.id)}
+                                    title="Approve ₹1,000 Bonus"
+                                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[10px] border border-emerald-200 transition-all"
+                                  >
+                                    +₹1k Bonus
+                                  </button>
+                                  {worker.salaryCut > 0 && (
+                                    <button
+                                      onClick={() => handleWaiveSalaryCut(worker.id)}
+                                      title="Waive Salary Cut"
+                                      className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 font-extrabold text-[10px] border border-amber-200 transition-all"
+                                    >
+                                      Waive Cut
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setSelectedWorkerModal(worker)}
+                                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-sm transition-all"
+                                  >
+                                    Inspect Profile
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -999,11 +1455,28 @@ export default function Home() {
                     <p className="text-xs text-slate-500 mt-1">Ingests raw POS logs, inventory telemetry, staff shift punches, and audit scores.</p>
                   </div>
                   <div className="flex gap-2">
-                    <button className="bg-white border border-slate-200 hover:bg-slate-50 font-bold text-xs px-4 py-2 rounded-xl shadow-sm transition-all">
-                      Sync Database
+                    <button
+                      onClick={handleDatabaseSync}
+                      disabled={isSyncingDb}
+                      className="bg-white border border-slate-200 hover:bg-slate-50 font-bold text-xs px-4 py-2 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                    >
+                      {isSyncingDb ? (
+                        <>
+                          <span className="h-3.5 w-3.5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin"></span>
+                          <span>Syncing...</span>
+                        </>
+                      ) : (
+                        <span>Sync Database</span>
+                      )}
                     </button>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all">
-                      Upload CSV Payload
+                    <button
+                      onClick={() => setShowCsvUploadModal(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
+                      </svg>
+                      <span>Upload CSV Payload</span>
                     </button>
                   </div>
                 </div>
@@ -1022,6 +1495,35 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+
+                {/* Live Real-Time Telemetry Event Log */}
+                <div className="apple-card p-6 bg-slate-900 text-white">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${isStreamingLiveEvents ? "bg-emerald-400 animate-ping" : "bg-amber-400"}`}></span>
+                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
+                        Live Socket Telemetry Feed ({liveEventsLog.length} events active)
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setIsStreamingLiveEvents(prev => !prev)}
+                      className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all border border-slate-700"
+                    >
+                      {isStreamingLiveEvents ? "Pause Stream" : "Resume Stream"}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 font-mono text-xs max-h-48 overflow-y-auto pr-1">
+                    {liveEventsLog.map(e => (
+                      <div key={e.id} className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-slate-300">
+                        <span className="truncate mr-3">[{e.time}] {e.text}</span>
+                        <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded shrink-0 border border-indigo-800">
+                          RAW_WEBSOCKET
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1037,6 +1539,26 @@ export default function Home() {
                     </h3>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={exportSalesToCsv}
+                      className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
+                      </svg>
+                      <span>Export CSV</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowRecordSalesModal(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Record Daily Sales</span>
+                    </button>
+
                     <div className="flex items-center space-x-2">
                       <label htmlFor="outlet-select" className="text-xs font-bold text-slate-500">Outlet:</label>
                       <select
@@ -1123,17 +1645,353 @@ export default function Home() {
               </div>
             )}
 
-            {/* Other steps 4, 6, 7, 8, 9, 10 */}
-            {(selectedStep === 4 || selectedStep >= 6) && (
-              <div className="apple-card p-8 text-center max-w-xl mx-auto space-y-4">
-                <div className="mx-auto h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                  <Icons.Workflow />
+            {/* ── STEP 2: DATA VALIDATION & SCHEMA AGENT ───────────────────────── */}
+            {selectedStep === 2 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-emerald-50/60 via-teal-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Step 2 · Data Validation & Schema Processing</span>
+                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Autonomous Data Cleaning & Schema Compliance</h2>
+                    <p className="text-xs text-slate-600 mt-1">Validates schema compliance, converts currency formats, removes duplicate transactions, and handles null values.</p>
+                  </div>
+                  <button
+                    onClick={() => showToast("Schema Sanitizer executed: 0 syntax anomalies found!", "success")}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Run Schema Sanitizer</span>
+                  </button>
                 </div>
-                <h3 className="text-lg font-black text-slate-900">Module Step {selectedStep}: {WORKFLOW_STEPS[selectedStep - 1].name}</h3>
-                <p className="text-xs text-slate-500">{WORKFLOW_STEPS[selectedStep - 1].desc}</p>
-                <button onClick={() => setSelectedStep(5)} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl text-xs shadow-md">
-                  ← Switch to Worker Attendance & Payroll Manager
-                </button>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {[
+                    { label: "Passed Records", val: `${salesRecords.length} / ${salesRecords.length}`, sub: "100% Validated", color: "text-emerald-600" },
+                    { label: "Corrupted Rows Cleaned", val: "0 Rows", sub: "Auto-repaired in pipeline", color: "text-blue-600" },
+                    { label: "Currency Normalization", val: "INR (₹) Standard", sub: "Cleaned ISO 4217", color: "text-indigo-600" },
+                    { label: "Schema Compliance", val: "v2.4 Strict", status: "Active", color: "text-purple-600" }
+                  ].map(c => (
+                    <div key={c.label} className="apple-card p-5">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{c.label}</p>
+                      <p className={`text-2xl font-black mt-2 tracking-tight ${c.color}`}>{c.val}</p>
+                      <p className="text-xs text-slate-500 mt-1">{c.sub || c.status}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="apple-card p-6">
+                  <h3 className="font-extrabold text-slate-900 text-sm mb-3">Live Validation Audit Log</h3>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-between">
+                      <span>[2026-08-11 10:42:01] PASS: Checked {salesRecords.length} sales records. Zero duplicate transaction IDs.</span>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">STATUS_OK</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900 text-blue-400 flex items-center justify-between">
+                      <span>[2026-08-11 10:42:02] PASS: All outlet_id references match master relational table.</span>
+                      <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">STATUS_OK</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 4: INVENTORY TELEMETRY AGENT ───────────────────────────── */}
+            {selectedStep === 4 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-purple-50/60 via-indigo-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-purple-600 uppercase tracking-widest">Step 4 · Inventory Telemetry Agent</span>
+                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Real-Time Stock Cover & Auto-Reorder PO Engine</h2>
+                    <p className="text-xs text-slate-600 mt-1">Tracks stock consumption velocity, calculates burn rates, and dispatches supplier POs.</p>
+                  </div>
+                  <Link
+                    href="/inventory"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all shrink-0 flex items-center space-x-1.5"
+                  >
+                    <span>Open Full Inventory Agent View</span>
+                    <Icons.ChevronRight />
+                  </Link>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="apple-card p-5">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Critical Deficit Items</p>
+                    <p className="text-3xl font-black text-red-600 mt-2">1 Item</p>
+                    <p className="text-xs text-slate-500 mt-1">Mozzarella Cheese (4.2 kg left at Hyderabad)</p>
+                    <button
+                      onClick={() => showToast("Dispatched PO-9921 for Mozzarella Cheese to Supplier!", "success")}
+                      className="mt-3 w-full py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-xl shadow-sm"
+                    >
+                      1-Click PO Reorder
+                    </button>
+                  </div>
+
+                  <div className="apple-card p-5">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Low Stock Warnings</p>
+                    <p className="text-3xl font-black text-amber-600 mt-2">2 Items</p>
+                    <p className="text-xs text-slate-500 mt-1">Espresso Coffee Beans, Chocolate Sauce</p>
+                    <button
+                      onClick={() => showToast("Pre-ordered Coffee Beans & Chocolate Sauce stock!", "info")}
+                      className="mt-3 w-full py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl shadow-sm"
+                    >
+                      Pre-Order Batch
+                    </button>
+                  </div>
+
+                  <div className="apple-card p-5">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Auto Reorder Rules</p>
+                    <p className="text-3xl font-black text-emerald-600 mt-2">8 / 8 SKUs</p>
+                    <p className="text-xs text-slate-500 mt-1">AI agent monitors burn rates 24/7</p>
+                    <Link
+                      href="/inventory"
+                      className="mt-3 block text-center py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-extrabold rounded-xl border border-indigo-200"
+                    >
+                      Manage Telemetry Rules
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 6: MARKETING & CAMPAIGN ROI AGENT ──────────────────────── */}
+            {selectedStep === 6 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-pink-50/60 via-purple-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-pink-600 uppercase tracking-widest">Step 6 · Marketing & Campaign ROI Agent</span>
+                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Campaign Performance, CAC & Stock-Aware Discounts</h2>
+                    <p className="text-xs text-slate-600 mt-1">Tracks digital promotion ROI, customer acquisition cost (CAC), and allocates discounts dynamically.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowMarketingModal(true)}
+                    className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Launch New Campaign</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {marketingCampaigns.map(c => (
+                    <div key={c.id} className="apple-card apple-card-hover p-5">
+                      <div className="flex justify-between items-start">
+                        <span className="text-xs font-extrabold text-pink-600 bg-pink-50 border border-pink-200 px-2.5 py-0.5 rounded-full">{c.channel}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">{c.status}</span>
+                      </div>
+                      <h3 className="font-extrabold text-slate-900 text-sm mt-3">{c.name}</h3>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-slate-400 text-[10px] uppercase font-bold">Total Budget</p>
+                          <p className="font-black text-slate-900">{formatCurrency(c.budget)}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400 text-[10px] uppercase font-bold">Revenue ROI</p>
+                          <p className="font-black text-emerald-600">{c.roi}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 7: BRAND AUDIT & COMPLIANCE AGENT ───────────────────────── */}
+            {selectedStep === 7 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-amber-50/60 via-orange-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-amber-600 uppercase tracking-widest">Step 7 · Brand Audit & Compliance Agent</span>
+                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Outlet Hygiene, Safety & SOP Compliance Scorecard</h2>
+                    <p className="text-xs text-slate-600 mt-1">Analyzes store audit scores, inspects refrigeration logs, and enforces brand uniform standards.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowAuditModal(true)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Log Store Audit Inspection</span>
+                  </button>
+                </div>
+
+                <div className="apple-card overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-[10px] uppercase font-black text-slate-500">
+                      <tr>
+                        <th className="p-4">Outlet Location</th>
+                        <th className="p-4">Auditor</th>
+                        <th className="p-4 text-center">Hygiene</th>
+                        <th className="p-4 text-center">Safety</th>
+                        <th className="p-4 text-center">Uniform SOP</th>
+                        <th className="p-4 text-center">Total Score</th>
+                        <th className="p-4">Compliance Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {storeAudits.map(audit => (
+                        <tr key={audit.id} className="hover:bg-slate-50">
+                          <td className="p-4 font-extrabold text-slate-900">{audit.outletName}</td>
+                          <td className="p-4 text-slate-600">{audit.auditor}</td>
+                          <td className="p-4 text-center font-bold text-emerald-600">{audit.hygieneScore}%</td>
+                          <td className="p-4 text-center font-bold text-blue-600">{audit.safetyScore}%</td>
+                          <td className="p-4 text-center font-bold text-purple-600">{audit.uniformSopScore}%</td>
+                          <td className="p-4 text-center font-black text-slate-900 text-sm">{audit.totalScore}%</td>
+                          <td className="p-4">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                              audit.totalScore >= 90 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                            }`}>
+                              {audit.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 8: FRANCHISE INTELLIGENCE ENGINE ───────────────────────── */}
+            {selectedStep === 8 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-indigo-300 uppercase tracking-widest">Step 8 · Central Franchise Intelligence Engine</span>
+                    <h2 className="text-2xl font-black mt-1">Multi-Domain Agent Correlation Matrix</h2>
+                    <p className="text-xs text-indigo-200 mt-1">Fuses sales telemetry, marketing spend, staff attendance, and inventory depletion into centralized AI insights.</p>
+                  </div>
+                  <button
+                    onClick={() => showToast("AI Correlation Engine recalculated across 5 outlets!", "success")}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-lg shrink-0"
+                  >
+                    Recalculate Correlations
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="apple-card p-5 border-l-4 border-l-emerald-500">
+                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Marketing vs Footfall Correlation</h4>
+                    <p className="text-2xl font-black text-emerald-600 mt-2">+0.88 Strong Pos</p>
+                    <p className="text-xs text-slate-500 mt-1">Zomato Monsoon promo directly drove +430 customer visits in Bengaluru & Hyderabad.</p>
+                  </div>
+
+                  <div className="apple-card p-5 border-l-4 border-l-amber-500">
+                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Staff Delays vs Order Rush Bottleneck</h4>
+                    <p className="text-2xl font-black text-amber-600 mt-2">-0.64 Inverse Impact</p>
+                    <p className="text-xs text-slate-500 mt-1">Late clock-ins at Chennai Marina increased peak customer wait times by 4.5 minutes.</p>
+                  </div>
+
+                  <div className="apple-card p-5 border-l-4 border-l-purple-500">
+                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Stockout Variance vs Sales Margin</h4>
+                    <p className="text-2xl font-black text-purple-600 mt-2">Zero Stockout Loss</p>
+                    <p className="text-xs text-slate-500 mt-1">Autonomous PO agent prevented projected ₹18,000 lost revenue from coffee bean depletion.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 9: BUSINESS STRATEGY RECOMMENDATIONS ENGINE ───────────── */}
+            {selectedStep === 9 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-emerald-50/60 via-indigo-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Step 9 · Business Strategy Recommendations Engine</span>
+                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Actionable Operational Strategies & ROI Optimizer</h2>
+                    <p className="text-xs text-slate-600 mt-1">AI-generated recommendations to boost sales, reduce labor waste, and prevent inventory deficits.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {strategyRecommendations.map(rec => (
+                    <div key={rec.id} className="apple-card apple-card-hover p-6 flex flex-col justify-between space-y-4">
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">{rec.category}</span>
+                          <span className="text-[10px] font-bold text-slate-500">{rec.outlet}</span>
+                        </div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">{rec.title}</h3>
+                        <p className="text-xs text-slate-600 mt-2 leading-relaxed">{rec.desc}</p>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-slate-400">Projected Impact</p>
+                          <p className="font-black text-emerald-600 text-sm">{rec.impact}</p>
+                        </div>
+
+                        {rec.applied ? (
+                          <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl">
+                            ✓ Strategy Applied
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleApplyRecommendation(rec.id)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-md transition-all active:scale-[0.98]"
+                          >
+                            Apply Recommendation
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 10: DASHBOARD & REAL-TIME ALERTS COMMAND CENTER ────────── */}
+            {selectedStep === 10 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="apple-card p-6 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-black text-indigo-300 uppercase tracking-widest">Step 10 · Executive Dashboard & Anomaly Alerts</span>
+                    <h2 className="text-2xl font-black mt-1">Real-Time Operational Anomaly Alert Center</h2>
+                    <p className="text-xs text-indigo-200 mt-1">Monitors critical anomalies across inventory, labor clock-ins, and outlet revenue benchmarks.</p>
+                  </div>
+                  <span className="text-xs font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3.5 py-2 rounded-xl">
+                    ● Telemetry Stream 100% Operational
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {systemAlerts.map(a => (
+                    <div
+                      key={a.id}
+                      className={`apple-card p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+                        a.resolved ? "opacity-60 bg-slate-50" : ""
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <span className={`h-3 w-3 rounded-full mt-1 shrink-0 ${
+                          a.level === "critical" ? "bg-red-500 animate-ping" : a.level === "warning" ? "bg-amber-500" : "bg-blue-500"
+                        }`}></span>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-extrabold text-slate-900 text-sm">{a.title}</h4>
+                            <span className="text-[10px] font-bold text-slate-500">({a.outlet})</span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">{a.desc}</p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0">
+                        {a.resolved ? (
+                          <span className="text-xs font-extrabold text-slate-500 bg-slate-200 px-3 py-1 rounded-xl">Resolved</span>
+                        ) : (
+                          <button
+                            onClick={() => handleResolveAlert(a.id)}
+                            className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm transition-all"
+                          >
+                            Resolve Alert
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1294,6 +2152,630 @@ export default function Home() {
               >
                 Close Worker Profile
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GLOBAL TOAST NOTIFICATION ─────────────────────────────────────── */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
+          <div
+            className={`px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center space-x-2.5 backdrop-blur-md ${
+              toast.type === "success"
+                ? "bg-emerald-950/90 border-emerald-700/80 text-emerald-200"
+                : toast.type === "warning"
+                ? "bg-amber-950/90 border-amber-700/80 text-amber-200"
+                : "bg-indigo-950/90 border-indigo-700/80 text-indigo-200"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-current animate-ping"></span>
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 1: CSV PAYLOAD UPLOAD ────────────────────────────────────── */}
+      {showCsvUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Upload Sales CSV Payload</h3>
+                <p className="text-xs text-slate-500">Paste raw CSV logs or import sales telemetry records</p>
+              </div>
+              <button onClick={() => setShowCsvUploadModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCsvUploadSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">CSV Format (Outlet, Date, Revenue, Cost, Orders, Customers)</label>
+                <textarea
+                  rows={5}
+                  value={csvRawInput}
+                  onChange={e => setCsvRawInput(e.target.value)}
+                  placeholder={`Outlet,Date,Revenue,Cost,Orders,Customers\nBengaluru Central,2026-08-01,48000,26000,230,260\nHyderabad Tech Park,2026-08-01,52000,28000,240,280`}
+                  className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-2xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCsvUploadModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Ingest CSV Data
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: RECORD DAILY SALES ENTRY ─────────────────────────────── */}
+      {showRecordSalesModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Record Daily Sales Entry</h3>
+                <p className="text-xs text-slate-500">Manual POS entry for outlet operations</p>
+              </div>
+              <button onClick={() => setShowRecordSalesModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordSalesSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
+                <select
+                  value={newSalesForm.outletId}
+                  onChange={e => setNewSalesForm({ ...newSalesForm, outletId: e.target.value })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="1">FranchiseOps - Bengaluru Central</option>
+                  <option value="2">FranchiseOps - Hyderabad Tech Park</option>
+                  <option value="3">FranchiseOps - Chennai Marina</option>
+                  <option value="4">FranchiseOps - Mumbai Andheri</option>
+                  <option value="5">FranchiseOps - Pune Hinjawadi</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sale Date</label>
+                  <input
+                    type="date"
+                    value={newSalesForm.saleDate}
+                    onChange={e => setNewSalesForm({ ...newSalesForm, saleDate: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Total Orders</label>
+                  <input
+                    type="number"
+                    value={newSalesForm.totalOrders}
+                    onChange={e => setNewSalesForm({ ...newSalesForm, totalOrders: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Gross Revenue (₹)</label>
+                  <input
+                    type="number"
+                    value={newSalesForm.grossRevenue}
+                    onChange={e => setNewSalesForm({ ...newSalesForm, grossRevenue: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Operating Cost (₹)</label>
+                  <input
+                    type="number"
+                    value={newSalesForm.operatingCost}
+                    onChange={e => setNewSalesForm({ ...newSalesForm, operatingCost: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRecordSalesModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Save Sales Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 3: WORKER PUNCH CLOCK IN / OUT ───────────────────────────── */}
+      {showClockInModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Punch Clock In / Out</h3>
+                <p className="text-xs text-slate-500">Record staff shift attendance & salary deductions</p>
+              </div>
+              <button onClick={() => setShowClockInModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleClockInSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Staff Worker</label>
+                <select
+                  value={clockInForm.workerId}
+                  onChange={e => setClockInForm({ ...clockInForm, workerId: parseInt(e.target.value, 10) })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {workers.map(w => (
+                    <option key={w.id} value={w.id}>{w.name} ({w.role} - {w.outletName})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock In Time</label>
+                  <input
+                    type="text"
+                    value={clockInForm.clockIn}
+                    onChange={e => setClockInForm({ ...clockInForm, clockIn: e.target.value })}
+                    placeholder="08:45 AM"
+                    className="w-full text-xs font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock Out Time</label>
+                  <input
+                    type="text"
+                    value={clockInForm.clockOut}
+                    onChange={e => setClockInForm({ ...clockInForm, clockOut: e.target.value })}
+                    placeholder="05:30 PM"
+                    className="w-full text-xs font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Attendance Status</label>
+                <select
+                  value={clockInForm.status}
+                  onChange={e => setClockInForm({ ...clockInForm, status: e.target.value as any })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="Present">Present (On Time)</option>
+                  <option value="Late">Late Clock-In</option>
+                  <option value="Half Day">Half Day</option>
+                  <option value="Absent">Absent</option>
+                </select>
+              </div>
+
+              {clockInForm.status === "Late" || clockInForm.status === "Half Day" || clockInForm.status === "Absent" ? (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2">
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-red-800">Deduction Amount (₹)</label>
+                    <input
+                      type="number"
+                      value={clockInForm.deduction}
+                      onChange={e => setClockInForm({ ...clockInForm, deduction: e.target.value })}
+                      placeholder="500"
+                      className="w-full text-xs font-bold bg-white border border-red-200 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-red-800">Reason for Salary Cut</label>
+                    <input
+                      type="text"
+                      value={clockInForm.deductionReason}
+                      onChange={e => setClockInForm({ ...clockInForm, deductionReason: e.target.value })}
+                      placeholder="Traffic delay > 45 mins"
+                      className="w-full text-xs bg-white border border-red-200 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowClockInModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Submit Shift Punch
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 4: REGISTER NEW WORKER ───────────────────────────────────── */}
+      {showAddWorkerModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Register New Staff Worker</h3>
+                <p className="text-xs text-slate-500">Add barista, store lead, or cashier to payroll</p>
+              </div>
+              <button onClick={() => setShowAddWorkerModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddWorkerSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Worker Name *</label>
+                  <input
+                    type="text"
+                    value={newWorkerForm.name}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, name: e.target.value })}
+                    placeholder="e.g. Vikram Sharma"
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Role / Designation</label>
+                  <input
+                    type="text"
+                    value={newWorkerForm.role}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, role: e.target.value })}
+                    placeholder="Head Barista"
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
+                  <select
+                    value={newWorkerForm.outletName}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, outletName: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="Bengaluru Central">Bengaluru Central</option>
+                    <option value="Hyderabad Tech Park">Hyderabad Tech Park</option>
+                    <option value="Chennai Marina">Chennai Marina</option>
+                    <option value="Mumbai Andheri">Mumbai Andheri</option>
+                    <option value="Pune Hinjawadi">Pune Hinjawadi</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={newWorkerForm.phone}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, phone: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Base Monthly Salary (₹)</label>
+                  <input
+                    type="number"
+                    value={newWorkerForm.baseSalary}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, baseSalary: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Monthly Bonus (₹)</label>
+                  <input
+                    type="number"
+                    value={newWorkerForm.bonus}
+                    onChange={e => setNewWorkerForm({ ...newWorkerForm, bonus: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddWorkerModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Register Worker
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 5: LAUNCH MARKETING CAMPAIGN ────────────────────────────── */}
+      {showMarketingModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Launch Marketing Campaign</h3>
+                <p className="text-xs text-slate-500">Set campaign parameters & allocated budget</p>
+              </div>
+              <button onClick={() => setShowMarketingModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleLaunchCampaignSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Campaign Name *</label>
+                <input
+                  type="text"
+                  value={newMarketingForm.name}
+                  onChange={e => setNewMarketingForm({ ...newMarketingForm, name: e.target.value })}
+                  placeholder="e.g. Festival Season Combo Pack"
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Channel / Platform</label>
+                <select
+                  value={newMarketingForm.channel}
+                  onChange={e => setNewMarketingForm({ ...newMarketingForm, channel: e.target.value })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                >
+                  <option value="Google Local Ads">Google Local Ads</option>
+                  <option value="Zomato & Swiggy Promo">Zomato & Swiggy Promo</option>
+                  <option value="In-Store QR Code">In-Store QR Code</option>
+                  <option value="Instagram Geofence">Instagram Geofence</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Allocated Budget (₹)</label>
+                <input
+                  type="number"
+                  value={newMarketingForm.budget}
+                  onChange={e => setNewMarketingForm({ ...newMarketingForm, budget: e.target.value })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMarketingModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-pink-600 hover:bg-pink-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Launch Campaign
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 6: LOG STORE AUDIT ───────────────────────────────────────── */}
+      {showAuditModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Log Store Audit Inspection</h3>
+                <p className="text-xs text-slate-500">Record hygiene, safety & SOP compliance</p>
+              </div>
+              <button onClick={() => setShowAuditModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleLogAuditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
+                <select
+                  value={newAuditForm.outletName}
+                  onChange={e => setNewAuditForm({ ...newAuditForm, outletName: e.target.value })}
+                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="Bengaluru Central">Bengaluru Central</option>
+                  <option value="Hyderabad Tech Park">Hyderabad Tech Park</option>
+                  <option value="Chennai Marina">Chennai Marina</option>
+                  <option value="Mumbai Andheri">Mumbai Andheri</option>
+                  <option value="Pune Hinjawadi">Pune Hinjawadi</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Hygiene %</label>
+                  <input
+                    type="number"
+                    value={newAuditForm.hygieneScore}
+                    onChange={e => setNewAuditForm({ ...newAuditForm, hygieneScore: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Safety %</label>
+                  <input
+                    type="number"
+                    value={newAuditForm.safetyScore}
+                    onChange={e => setNewAuditForm({ ...newAuditForm, safetyScore: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Uniform %</label>
+                  <input
+                    type="number"
+                    value={newAuditForm.uniformSopScore}
+                    onChange={e => setNewAuditForm({ ...newAuditForm, uniformSopScore: e.target.value })}
+                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Audit Notes & Findings</label>
+                <input
+                  type="text"
+                  value={newAuditForm.notes}
+                  onChange={e => setNewAuditForm({ ...newAuditForm, notes: e.target.value })}
+                  placeholder="Refrigeration logs clean. Uniform compliant."
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAuditModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md"
+                >
+                  Save Audit Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── SPOTLIGHT COMMAND PALETTE MODAL (⌘K) ─────────────────────────── */}
+      {commandPaletteOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-start justify-center pt-20 p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-4 w-full max-w-2xl shadow-2xl animate-fade-in text-white">
+            <div className="flex items-center space-x-3 border-b border-slate-800 pb-3 mb-3 px-2">
+              <svg className="w-5 h-5 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                autoFocus
+                value={commandPaletteQuery}
+                onChange={e => setCommandPaletteQuery(e.target.value)}
+                placeholder="Type a step name, worker, action, or command (e.g. 'sales', 'payroll', 'export')..."
+                className="w-full bg-transparent text-sm font-semibold text-white placeholder-slate-500 focus:outline-none"
+              />
+              <kbd className="bg-slate-800 text-slate-400 text-[10px] font-mono px-2 py-1 rounded border border-slate-700">ESC</kbd>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto space-y-2 px-1">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2">Matching Workflow Modules</p>
+              {WORKFLOW_STEPS.filter(s => commandPaletteQuery.trim() === "" || s.name.toLowerCase().includes(commandPaletteQuery.toLowerCase()) || s.desc.toLowerCase().includes(commandPaletteQuery.toLowerCase())).map(step => (
+                <button
+                  key={step.id}
+                  onClick={() => {
+                    setSelectedStep(step.id);
+                    setCommandPaletteOpen(false);
+                    showToast(`Navigated to Step ${step.id}: ${step.name}`, "info");
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 hover:bg-indigo-600/80 transition-all border border-slate-800 text-left group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="h-7 w-7 rounded-xl bg-slate-800 group-hover:bg-white/20 flex items-center justify-center font-extrabold text-xs text-indigo-300 group-hover:text-white">
+                      {step.id}
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-slate-100 group-hover:text-white">{step.name}</p>
+                      <p className="text-[10px] text-slate-400 group-hover:text-indigo-100 truncate max-w-md">{step.desc}</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 group-hover:text-white">Jump →</span>
+                </button>
+              ))}
+
+              <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 px-2 pt-2">Quick System Actions</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => { exportSalesToCsv(); setCommandPaletteOpen(false); }}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
+                >
+                  📥 Export Sales CSV
+                </button>
+                <button
+                  onClick={() => { setShowRecordSalesModal(true); setCommandPaletteOpen(false); }}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
+                >
+                  📊 Record Sales Entry
+                </button>
+                <button
+                  onClick={() => { setShowClockInModal(true); setCommandPaletteOpen(false); }}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
+                >
+                  ⏱️ Punch Clock In/Out
+                </button>
+                <button
+                  onClick={() => { setShowAddWorkerModal(true); setCommandPaletteOpen(false); }}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
+                >
+                  👤 Register New Worker
+                </button>
+              </div>
             </div>
           </div>
         </div>

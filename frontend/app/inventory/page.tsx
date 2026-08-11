@@ -35,9 +35,104 @@ export default function InventoryAgentPage() {
   const [editNewStock, setEditNewStock] = useState("");
   const [editReason, setEditReason] = useState("");
 
+  // Add SKU Modal State
+  const [showAddSkuModal, setShowAddSkuModal] = useState(false);
+  const [newSkuData, setNewSkuData] = useState({
+    itemName: "",
+    sku: "",
+    category: "Raw Materials",
+    currentStock: "",
+    maxCapacity: "",
+    unit: "kg",
+    minThreshold: "",
+    unitCost: "",
+    burnRate: "",
+    outletName: "Bengaluru Central",
+  });
+
   // Notification Toast State
   const [toast, setToast] = useState<{ message: string; type: "success" | "info" | "warning" } | null>(null);
   const [isAgentRunning, setIsAgentRunning] = useState(false);
+
+  // CSV Export Handler
+  const exportInventoryToCsv = () => {
+    if (filteredItems.length === 0) {
+      showToast("No inventory records to export.", "warning");
+      return;
+    }
+    const headers = ["ID", "Item Name", "SKU", "Category", "Location", "Current Stock", "Max Capacity", "Unit", "Unit Cost (INR)", "Burn Velocity", "Auto Reorder"];
+    const rows = filteredItems.map((item) => [
+      item.id,
+      `"${item.itemName}"`,
+      item.sku,
+      item.category,
+      `"${item.outletName}"`,
+      item.currentStock,
+      item.maxCapacity,
+      item.unit,
+      item.unitCost,
+      item.burnRate,
+      item.autoReorder ? "Yes" : "No",
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `FranchiseOps_Inventory_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Downloaded Inventory CSV Report!", "success");
+  };
+
+  // Add SKU Submit Handler
+  const handleAddSkuSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSkuData.itemName.trim() || !newSkuData.sku.trim()) {
+      showToast("Please enter an Item Name and SKU.", "warning");
+      return;
+    }
+
+    const newItem = {
+      id: Date.now(),
+      outletId: 1,
+      outletName: newSkuData.outletName,
+      itemName: newSkuData.itemName,
+      sku: newSkuData.sku,
+      category: newSkuData.category,
+      currentStock: parseFloat(newSkuData.currentStock || "0"),
+      maxCapacity: parseFloat(newSkuData.maxCapacity || "100"),
+      unit: newSkuData.unit || "Units",
+      minThreshold: parseFloat(newSkuData.minThreshold || "10"),
+      unitCost: parseFloat(newSkuData.unitCost || "100"),
+      burnRate: parseFloat(newSkuData.burnRate || "1.0"),
+      autoReorder: true,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    setItems((prev) => [newItem, ...prev]);
+
+    // Send API call if backend active
+    try {
+      axios.post("http://localhost:5000/api/inventory/add", newItem);
+    } catch (e) {}
+
+    setShowAddSkuModal(false);
+    setNewSkuData({
+      itemName: "",
+      sku: "",
+      category: "Raw Materials",
+      currentStock: "",
+      maxCapacity: "",
+      unit: "kg",
+      minThreshold: "",
+      unitCost: "",
+      burnRate: "",
+      outletName: "Bengaluru Central",
+    });
+    showToast(`Added new SKU "${newItem.itemName}" to inventory!`, "success");
+  };
 
   // Fetch Inventory from API if live
   useEffect(() => {
@@ -420,8 +515,26 @@ export default function InventoryAgentPage() {
             </select>
           </div>
 
-          <div className="text-xs text-slate-400 flex items-center justify-between md:justify-end gap-2">
-            <span>Showing <strong className="text-white">{filteredItems.length}</strong> of {items.length} items</span>
+          <div className="flex items-center justify-between md:justify-end gap-3 text-xs">
+            <button
+              onClick={exportInventoryToCsv}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 shadow-sm active:scale-[0.98]"
+            >
+              <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
+              </svg>
+              <span>Export CSV</span>
+            </button>
+
+            <button
+              onClick={() => setShowAddSkuModal(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold px-4 py-2 rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center space-x-1.5 active:scale-[0.98]"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add New SKU</span>
+            </button>
           </div>
         </div>
 
@@ -658,6 +771,166 @@ export default function InventoryAgentPage() {
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/30"
                 >
                   Save Stock Telemetry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add New SKU Item Modal ────────────────────────────────────────── */}
+      {showAddSkuModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+              <div>
+                <h3 className="text-base font-black text-white">Add New Inventory SKU</h3>
+                <p className="text-xs text-slate-400">Register new raw material or packaging item for tracking</p>
+              </div>
+              <button onClick={() => setShowAddSkuModal(false)} className="text-slate-500 hover:text-white p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSkuSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Item Name *</label>
+                  <input
+                    type="text"
+                    value={newSkuData.itemName}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, itemName: e.target.value })}
+                    placeholder="e.g. Arabica Coffee Beans"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-semibold"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">SKU Code *</label>
+                  <input
+                    type="text"
+                    value={newSkuData.sku}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, sku: e.target.value })}
+                    placeholder="RAW-ARAB-01"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Category</label>
+                  <select
+                    value={newSkuData.category}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, category: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="Raw Materials">Raw Materials</option>
+                    <option value="Dairy">Dairy</option>
+                    <option value="Packaging">Packaging</option>
+                    <option value="Beverage Additives">Beverage Additives</option>
+                    <option value="Bakery">Bakery</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Outlet Location</label>
+                  <select
+                    value={newSkuData.outletName}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, outletName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="Bengaluru Central">Bengaluru Central</option>
+                    <option value="Hyderabad Tech Park">Hyderabad Tech Park</option>
+                    <option value="Chennai Marina">Chennai Marina</option>
+                    <option value="Mumbai Andheri">Mumbai Andheri</option>
+                    <option value="Pune Hinjawadi">Pune Hinjawadi</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newSkuData.currentStock}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, currentStock: e.target.value })}
+                    placeholder="50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Max Capacity</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newSkuData.maxCapacity}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, maxCapacity: e.target.value })}
+                    placeholder="200"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">Unit</label>
+                  <input
+                    type="text"
+                    value={newSkuData.unit}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, unit: e.target.value })}
+                    placeholder="kg / Liters"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Unit Cost (₹)</label>
+                  <input
+                    type="number"
+                    value={newSkuData.unitCost}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, unitCost: e.target.value })}
+                    placeholder="450"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Daily Burn Velocity</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newSkuData.burnRate}
+                    onChange={(e) => setNewSkuData({ ...newSkuData, burnRate: e.target.value })}
+                    placeholder="8.5"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddSkuModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-800 text-xs font-bold text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/30"
+                >
+                  Register SKU Item
                 </button>
               </div>
             </form>

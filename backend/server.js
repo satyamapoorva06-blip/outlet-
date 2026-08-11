@@ -371,6 +371,137 @@ app.get('/api/inventory/agent-logs', (req, res) => {
   res.json({ logs: mockInventoryLogs });
 });
 
+// POST /api/inventory/add
+app.post('/api/inventory/add', (req, res) => {
+  try {
+    const { itemName, sku, category, currentStock, maxCapacity, unit, minThreshold, unitCost, burnRate, autoReorder, outletName, outletId } = req.body;
+    const newItem = {
+      id: Date.now(),
+      outletId: parseInt(outletId || 1, 10),
+      outletName: outletName || "Bengaluru Central",
+      itemName: itemName || "New Inventory Item",
+      sku: sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      category: category || "General",
+      currentStock: parseFloat(currentStock || 0),
+      maxCapacity: parseFloat(maxCapacity || 100),
+      unit: unit || "Units",
+      minThreshold: parseFloat(minThreshold || 10),
+      unitCost: parseFloat(unitCost || 100),
+      burnRate: parseFloat(burnRate || 1.0),
+      autoReorder: autoReorder !== undefined ? autoReorder : true,
+      lastUpdated: new Date().toISOString()
+    };
+    mockInventoryItems.unshift(newItem);
+    res.json({ success: true, item: newItem });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error adding inventory SKU' });
+  }
+});
+
+// POST /api/sales/create
+app.post('/api/sales/create', async (req, res) => {
+  try {
+    const { outletId, saleDate, totalOrders, customerCount, grossRevenue, operatingCost } = req.body;
+    const rev = parseFloat(grossRevenue || 0);
+    const cost = parseFloat(operatingCost || 0);
+    const profit = rev - cost;
+    const orders = parseInt(totalOrders || 1, 10);
+    const aov = orders > 0 ? parseFloat((rev / orders).toFixed(2)) : 0;
+    
+    // In-memory or DB insertion fallback
+    const newRecord = {
+      id: Date.now(),
+      outletId: parseInt(outletId || 1, 10),
+      saleDate: saleDate || new Date().toISOString().slice(0, 10),
+      totalOrders: orders,
+      customerCount: parseInt(customerCount || orders, 10),
+      grossRevenue: rev,
+      operatingCost: cost,
+      netProfit: profit,
+      averageOrderValue: aov,
+      paymentSplit: { cash: rev * 0.2, card: rev * 0.3, upi: rev * 0.5 }
+    };
+    res.json({ success: true, record: newRecord });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error creating sales log' });
+  }
+});
+
+// In-memory collections for Workers, Marketing, Audits & Strategy
+let mockMarketingCampaigns = [
+  { id: 1, name: "Weekend Monsoon Combo Offer", channel: "Zomato & Swiggy Promo", budget: 15000, spend: 11200, conversions: 430, revenueGenerated: 68800, roi: "514%", status: "Active" },
+  { id: 2, name: "Local Office Park Geofence Ad", channel: "Google Local Ads", budget: 20000, spend: 18500, conversions: 620, revenueGenerated: 99200, roi: "436%", status: "Active" },
+  { id: 3, name: "Student Loyalty Discount Card", channel: "In-Store QR Code", budget: 5000, spend: 3200, conversions: 290, revenueGenerated: 34800, roi: "987%", status: "Completed" },
+];
+
+let mockStoreAudits = [
+  { id: 1, outletName: "Bengaluru Central", auditDate: "2026-07-28", auditor: "Ananya Roy", hygieneScore: 98, safetyScore: 96, uniformSopScore: 94, totalScore: 96, status: "Passed", notes: "Excellent kitchen cleanliness and temperature control logs." },
+  { id: 2, outletName: "Hyderabad Tech Park", auditDate: "2026-07-26", auditor: "Suresh Menon", hygieneScore: 92, safetyScore: 90, uniformSopScore: 88, totalScore: 90, status: "Passed with Advisory", notes: "Minor delay in staff uniform inspection records." },
+  { id: 3, outletName: "Chennai Marina", auditDate: "2026-07-24", auditor: "Ananya Roy", hygieneScore: 85, safetyScore: 88, uniformSopScore: 82, totalScore: 85, status: "Re-Audit Scheduled", notes: "Refrigeration logs missing 1 morning entry." },
+];
+
+let mockStrategyRecommendations = [
+  { id: 1, title: "Shift Baristas to Morning Peak Rush", outlet: "Bengaluru Central", category: "Labor Efficiency", impact: "+₹14,500/week", confidence: "94%", desc: "Move 2 staff members from 14:00 slow shift to 08:30 morning peak to reduce queue times.", applied: false },
+  { id: 2, title: "Automate Reorder for Espresso Beans", outlet: "All Outlets", category: "Inventory Cover", impact: "Zero Stockouts", confidence: "98%", desc: "Set auto-reorder threshold to 30kg based on 8.5kg/day burn velocity.", applied: true },
+  { id: 3, title: "Launch Weekend Combo Promo in Chennai", outlet: "Chennai Marina", category: "Revenue Growth", impact: "+18% Weekend Sales", confidence: "89%", desc: "Activate weekend 15% combo discount on bakery items during 16:00-19:00.", applied: false },
+];
+
+// Marketing endpoints
+app.get('/api/marketing', (req, res) => res.json({ campaigns: mockMarketingCampaigns }));
+app.post('/api/marketing/create', (req, res) => {
+  const { name, channel, budget } = req.body;
+  const newCamp = {
+    id: Date.now(),
+    name: name || "New Marketing Campaign",
+    channel: channel || "Digital Ads",
+    budget: parseFloat(budget || 10000),
+    spend: 0,
+    conversions: 0,
+    revenueGenerated: 0,
+    roi: "0%",
+    status: "Active"
+  };
+  mockMarketingCampaigns.unshift(newCamp);
+  res.json({ success: true, campaign: newCamp });
+});
+
+// Audit endpoints
+app.get('/api/audits', (req, res) => res.json({ audits: mockStoreAudits }));
+app.post('/api/audits/create', (req, res) => {
+  const { outletName, auditor, hygieneScore, safetyScore, uniformSopScore, notes } = req.body;
+  const h = parseInt(hygieneScore || 90, 10);
+  const s = parseInt(safetyScore || 90, 10);
+  const u = parseInt(uniformSopScore || 90, 10);
+  const avg = Math.round((h + s + u) / 3);
+  const newAudit = {
+    id: Date.now(),
+    outletName: outletName || "Bengaluru Central",
+    auditDate: new Date().toISOString().slice(0, 10),
+    auditor: auditor || "Auditor Lead",
+    hygieneScore: h,
+    safetyScore: s,
+    uniformSopScore: u,
+    totalScore: avg,
+    status: avg >= 90 ? "Passed" : avg >= 80 ? "Passed with Advisory font" : "Re-Audit Scheduled",
+    notes: notes || "Routine store audit inspection completed."
+  };
+  mockStoreAudits.unshift(newAudit);
+  res.json({ success: true, audit: newAudit });
+});
+
+// Recommendation endpoints
+app.get('/api/recommendations', (req, res) => res.json({ recommendations: mockStrategyRecommendations }));
+app.post('/api/recommendations/apply', (req, res) => {
+  const { recId } = req.body;
+  const item = mockStrategyRecommendations.find(r => r.id === parseInt(recId, 10));
+  if (item) {
+    item.applied = true;
+    res.json({ success: true, recommendation: item });
+  } else {
+    res.status(404).json({ error: "Recommendation not found" });
+  }
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
