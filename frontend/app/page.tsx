@@ -303,6 +303,22 @@ export default function OperationsDashboard() {
   const [applyingRecId, setApplyingRecId] = useState<number | null>(null);
   const [rerunningAi, setRerunningAi] = useState<boolean>(false);
 
+  // Audit Agent States
+  const [auditSubTab, setAuditSubTab] = useState<"sessions" | "checklist" | "inventory" | "pos" | "shifts" | "incidents" | "anomalies" | "report">("sessions");
+  const [auditSessions, setAuditSessions] = useState<any[]>([]);
+  const [auditInventoryVariance, setAuditInventoryVariance] = useState<any>(null);
+  const [auditPosDiscrepancies, setAuditPosDiscrepancies] = useState<any>(null);
+  const [auditShiftVerification, setAuditShiftVerification] = useState<any>(null);
+  const [auditIncidents, setAuditIncidents] = useState<any>(null);
+  const [auditAnomalies, setAuditAnomalies] = useState<any>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [activeAuditSessionId, setActiveAuditSessionId] = useState<number | null>(null);
+  const [activeAuditSession, setActiveAuditSession] = useState<any>(null);
+  const [auditSessionLoading, setAuditSessionLoading] = useState(false);
+  const [newAuditForm, setNewAuditForm] = useState({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+  const [creatingAudit, setCreatingAudit] = useState(false);
+  const [checklistUpdating, setChecklistUpdating] = useState<number | null>(null);
+
   // UI / Modal States
   const [loading, setLoading] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -426,6 +442,116 @@ export default function OperationsDashboard() {
         .finally(() => setLoading(false));
     }
   }, [activeStepId]);
+
+  // Audit Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 7) {
+      setAuditLoading(true);
+      Promise.all([
+        api.get("/audit/sessions"),
+        api.get("/audit/inventory-variance"),
+        api.get("/audit/pos-discrepancies"),
+        api.get("/audit/shift-verification"),
+        api.get("/audit/incidents"),
+        api.get("/audit/anomalies"),
+      ])
+        .then(([sessRes, invRes, posRes, shiftRes, incRes, anomRes]) => {
+          setAuditSessions(sessRes.data);
+          setAuditInventoryVariance(invRes.data);
+          setAuditPosDiscrepancies(posRes.data);
+          setAuditShiftVerification(shiftRes.data);
+          setAuditIncidents(incRes.data);
+          setAuditAnomalies(anomRes.data);
+        })
+        .catch((err) => console.error("Error loading audit data:", err))
+        .finally(() => setAuditLoading(false));
+    }
+  }, [activeStepId, selectedOutlet]);
+
+  const handleLoadAuditSession = async (sessionId: number) => {
+    setActiveAuditSessionId(sessionId);
+    setAuditSessionLoading(true);
+    try {
+      const res = await api.get(`/audit/sessions/${sessionId}`);
+      setActiveAuditSession(res.data);
+    } catch (err) {
+      console.error("Error loading session detail:", err);
+    } finally {
+      setAuditSessionLoading(false);
+    }
+  };
+
+  const handleCreateAuditSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAuditForm.outletId || !newAuditForm.auditorName || !newAuditForm.auditDate) {
+      alert("Please fill in all required fields.");
+      return;
+    }
+    setCreatingAudit(true);
+    try {
+      const res = await api.post("/audit/sessions", {
+        outletId: parseInt(newAuditForm.outletId, 10),
+        auditorName: newAuditForm.auditorName,
+        auditDate: newAuditForm.auditDate,
+        notes: newAuditForm.notes,
+      });
+      // Load the new session immediately
+      await handleLoadAuditSession(res.data.sessionId);
+      setAuditSubTab("checklist");
+      setNewAuditForm({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+      // Refresh sessions list
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to create audit session.");
+    } finally {
+      setCreatingAudit(false);
+    }
+  };
+
+  const handleUpdateChecklistItem = async (itemId: number, answer: string, notes?: string) => {
+    setChecklistUpdating(itemId);
+    try {
+      await api.put(`/audit/checklist-items/${itemId}`, { answer, notes });
+      if (activeAuditSession) {
+        setActiveAuditSession((prev: any) => ({
+          ...prev,
+          checklist_items: prev.checklist_items.map((item: any) =>
+            item.id === itemId ? { ...item, answer, notes: notes || item.notes } : item
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("Error updating checklist item:", err);
+    } finally {
+      setChecklistUpdating(null);
+    }
+  };
+
+  const handleCompleteAuditSession = async (sessionId: number) => {
+    try {
+      const res = await api.post(`/audit/sessions/${sessionId}/complete`, {});
+      alert(`Audit completed! Score: ${res.data.overallScore}/100 — ${res.data.passFail}`);
+      await handleLoadAuditSession(sessionId);
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to complete audit session.");
+    }
+  };
+
+  const handleUpdateIncident = async (incidentId: number, status: string) => {
+    try {
+      await api.put(`/audit/incidents/${incidentId}`, {
+        status,
+        resolvedDate: status === "Resolved" ? new Date().toISOString().slice(0, 10) : null,
+      });
+      const incRes = await api.get("/audit/incidents");
+      setAuditIncidents(incRes.data);
+    } catch (err) {
+      console.error("Error updating incident:", err);
+    }
+  };
 
   const handleApplyRecommendation = async (rec: any) => {
     setApplyingRecId(rec.id);
@@ -2236,8 +2362,720 @@ export default function OperationsDashboard() {
             </div>
           )}
 
-          {/* OTHER STEPS (1, 2, 7, 8, 9, 10) Rendering within section */}
-          {![3, 4, 5, 6].includes(activeStepId) && (
+          {/* STEP 7: AUDIT AGENT */}
+          {activeStepId === 7 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+
+              {/* Sub-tab Navigation */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                {([
+                  { key: "sessions",   label: "📋 Audit Sessions" },
+                  { key: "checklist",  label: "✅ SOP Checklist" },
+                  { key: "inventory",  label: "📦 Inventory Variance" },
+                  { key: "pos",        label: "💳 POS Discrepancies" },
+                  { key: "shifts",     label: "👤 Shift Verification" },
+                  { key: "incidents",  label: "🔧 Facility Incidents" },
+                  { key: "anomalies",  label: "⚠️ Anomaly Flags" },
+                  { key: "report",     label: "📊 Audit Report" },
+                ] as const).map((tab) => (
+                  <button
+                    key={tab.key}
+                    id={`audit-tab-${tab.key}`}
+                    onClick={() => setAuditSubTab(tab.key)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                      auditSubTab === tab.key
+                        ? tab.key === "anomalies"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* KPI Summary Cards */}
+              {!auditLoading && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    {
+                      label: "Network Compliance",
+                      value: auditSessions.length > 0
+                        ? `${Math.round(auditSessions.filter(s => s.overallScore > 0).reduce((acc, s) => acc + s.overallScore, 0) / Math.max(auditSessions.filter(s => s.overallScore > 0).length, 1))}%`
+                        : "—",
+                      sub: "Avg. across completed sessions",
+                      color: "text-indigo-600",
+                    },
+                    {
+                      label: "Passed / Failed",
+                      value: `${auditSessions.filter(s => s.passFail === "Pass").length} / ${auditSessions.filter(s => s.passFail === "Fail").length}`,
+                      sub: `${auditSessions.filter(s => s.status === "Escalated").length} escalated`,
+                      color: "text-emerald-600",
+                    },
+                    {
+                      label: "Critical Anomalies",
+                      value: auditAnomalies?.summary?.critical ?? "—",
+                      sub: `${auditAnomalies?.summary?.total ?? 0} total flags`,
+                      color: "text-rose-600",
+                    },
+                    {
+                      label: "Open Incidents",
+                      value: auditIncidents?.summary?.open ?? "—",
+                      sub: `${auditIncidents?.summary?.critical ?? 0} critical priority`,
+                      color: "text-amber-600",
+                    },
+                  ].map((kpi, i) => (
+                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{kpi.label}</span>
+                      <span className={`text-2xl font-black mt-1 block ${kpi.color}`}>{kpi.value}</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block">{kpi.sub}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {auditLoading && (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-400 text-sm">
+                  Loading audit data...
+                </div>
+              )}
+
+              {/* ── 1. AUDIT SESSIONS ─────────────────────────────── */}
+              {auditSubTab === "sessions" && !auditLoading && (
+                <div className="space-y-4">
+                  {/* Create new session form */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-3">🆕 Start New Audit Session</h3>
+                    <form onSubmit={handleCreateAuditSession} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Outlet</label>
+                        <select
+                          value={newAuditForm.outletId}
+                          onChange={e => setNewAuditForm(f => ({ ...f, outletId: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 cursor-pointer"
+                        >
+                          <option value="">Select Outlet...</option>
+                          {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name} — {o.city}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Auditor Name</label>
+                        <input
+                          type="text"
+                          placeholder="Full name + role"
+                          value={newAuditForm.auditorName}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditorName: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Audit Date</label>
+                        <input
+                          type="date"
+                          value={newAuditForm.auditDate}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditDate: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="submit"
+                          disabled={creatingAudit}
+                          id="btn-create-audit-session"
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl cursor-pointer transition-all disabled:bg-indigo-400"
+                        >
+                          {creatingAudit ? "Creating..." : "➕ Start Audit"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Sessions table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">All Audit Sessions</h3>
+                      <span className="text-[10px] text-slate-400 font-mono">{auditSessions.length} total sessions</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-left">Auditor</th>
+                            <th className="px-4 py-2.5 text-left">Date</th>
+                            <th className="px-4 py-2.5 text-center">Score</th>
+                            <th className="px-4 py-2.5 text-center">Result</th>
+                            <th className="px-4 py-2.5 text-center">Status</th>
+                            <th className="px-4 py-2.5 text-center">Findings</th>
+                            <th className="px-4 py-2.5 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {auditSessions.map((session: any) => (
+                            <tr key={session.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{session.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{session.city}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 max-w-[140px] truncate">{session.auditorName}</td>
+                              <td className="px-4 py-3 text-slate-600 font-mono">{session.auditDate}</td>
+                              <td className="px-4 py-3 text-center">
+                                {session.overallScore > 0 ? (
+                                  <span className={`font-black text-sm ${session.overallScore >= 80 ? "text-emerald-600" : session.overallScore >= 70 ? "text-amber-600" : "text-rose-600"}`}>
+                                    {session.overallScore.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.passFail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                                  session.passFail === "Fail" ? "bg-rose-100 text-rose-700" :
+                                  "bg-slate-100 text-slate-600"
+                                }`}>
+                                  {session.passFail}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.status === "Completed" ? "bg-blue-100 text-blue-700" :
+                                  session.status === "Escalated" ? "bg-red-100 text-red-700" :
+                                  "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {session.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {session.criticalFindings > 0 ? (
+                                  <span className="text-rose-600 font-bold">{session.criticalFindings} 🔴</span>
+                                ) : (
+                                  <span className="text-slate-400">{session.totalFindings}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  id={`btn-load-session-${session.id}`}
+                                  onClick={() => { handleLoadAuditSession(session.id); setAuditSubTab("checklist"); }}
+                                  className="px-3 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-slate-700 transition-all"
+                                >
+                                  Open →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 2. SOP CHECKLIST ──────────────────────────────── */}
+              {auditSubTab === "checklist" && !auditLoading && (
+                <div className="space-y-4">
+                  {!activeAuditSession ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-8 text-center text-slate-400 text-sm space-y-3">
+                      <div className="text-3xl">📋</div>
+                      <p>No audit session loaded. Select a session from the Sessions tab, or create a new one.</p>
+                      <button onClick={() => setAuditSubTab("sessions")} className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-indigo-700">
+                        Go to Sessions
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Session header */}
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">{activeAuditSession.outletName} — {activeAuditSession.audit_date}</h3>
+                          <p className="text-[10px] text-slate-400">Auditor: {activeAuditSession.auditor_name} · Session #{activeAuditSession.id}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Score breakdown mini cards */}
+                          {[
+                            { label: "Hygiene", val: activeAuditSession.hygiene_score },
+                            { label: "Food Safety", val: activeAuditSession.food_safety_score },
+                            { label: "SOP", val: activeAuditSession.sop_score },
+                          ].map(s => (
+                            <div key={s.label} className="text-center bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 block">{s.label}</span>
+                              <span className={`text-sm font-black ${s.val >= 80 ? "text-emerald-600" : s.val >= 70 ? "text-amber-600" : s.val > 0 ? "text-rose-600" : "text-slate-300"}`}>
+                                {s.val > 0 ? `${s.val}%` : "—"}
+                              </span>
+                            </div>
+                          ))}
+                          <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${
+                            activeAuditSession.pass_fail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                            activeAuditSession.pass_fail === "Fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {activeAuditSession.overall_score > 0 ? `${activeAuditSession.overall_score}/100` : "Pending"}
+                          </span>
+                          {activeAuditSession.status === "In Progress" && (
+                            <button
+                              id={`btn-complete-session-${activeAuditSession.id}`}
+                              onClick={() => handleCompleteAuditSession(activeAuditSession.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-xl cursor-pointer transition-all"
+                            >
+                              ✓ Finalize Audit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Checklist by category */}
+                      {auditSessionLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 text-sm">Loading checklist...</div>
+                      ) : (
+                        ["Hygiene", "Food Safety", "Opening Procedure", "Closing Procedure", "SOP"].map(category => {
+                          const items = activeAuditSession.checklist_items?.filter((i: any) => i.category === category) || [];
+                          const passed = items.filter((i: any) => i.answer === "Pass").length;
+                          const failed = items.filter((i: any) => i.answer === "Fail").length;
+                          return (
+                            <div key={category} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                              <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-slate-700">{category}</h4>
+                                <div className="flex gap-2 text-[10px] font-bold">
+                                  <span className="text-emerald-600">{passed} Pass</span>
+                                  <span className="text-rose-600">{failed} Fail</span>
+                                  <span className="text-slate-400">{items.filter((i:any) => i.answer === "Pending").length} Pending</span>
+                                </div>
+                              </div>
+                              <div className="divide-y divide-slate-50">
+                                {items.map((item: any) => (
+                                  <div key={item.id} className={`px-5 py-3 flex items-center justify-between gap-4 hover:bg-slate-50/50 ${item.answer === "Fail" ? "border-l-4 border-rose-400" : item.answer === "Pass" ? "border-l-4 border-emerald-400" : "border-l-4 border-slate-200"}`}>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-800 font-medium leading-relaxed">{item.question}</p>
+                                      {item.notes && <p className="text-[10px] text-rose-600 mt-0.5 italic">{item.notes}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[9px] text-slate-400 font-bold">Wt:{item.score_weight}</span>
+                                      {(["Pass", "Fail", "N/A"] as const).map(ans => (
+                                        <button
+                                          key={ans}
+                                          id={`checklist-${item.id}-${ans}`}
+                                          disabled={checklistUpdating === item.id || activeAuditSession.status !== "In Progress"}
+                                          onClick={() => handleUpdateChecklistItem(item.id, ans)}
+                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all border ${
+                                            item.answer === ans
+                                              ? ans === "Pass" ? "bg-emerald-500 text-white border-emerald-500"
+                                              : ans === "Fail" ? "bg-rose-500 text-white border-rose-500"
+                                              : "bg-slate-500 text-white border-slate-500"
+                                              : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"
+                                          } disabled:opacity-50`}
+                                        >
+                                          {ans}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 3. INVENTORY VARIANCE ─────────────────────────── */}
+              {auditSubTab === "inventory" && !auditLoading && auditInventoryVariance && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: "Items Audited", value: auditInventoryVariance.summary?.totalItems ?? 0, color: "text-slate-900" },
+                      { label: "Critical Variance", value: auditInventoryVariance.summary?.criticalVariance ?? 0, color: "text-rose-600" },
+                      { label: "High Variance", value: auditInventoryVariance.summary?.highVariance ?? 0, color: "text-amber-600" },
+                      { label: "Within Normal", value: auditInventoryVariance.summary?.normal ?? 0, color: "text-emerald-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">Stock Variance Analysis</h3>
+                      <span className="text-[10px] text-slate-400">Physical stock vs POS-estimated consumption</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Item</th>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-center">Current Stock</th>
+                            <th className="px-4 py-2.5 text-center">Est. Consumption</th>
+                            <th className="px-4 py-2.5 text-center">Theoretical</th>
+                            <th className="px-4 py-2.5 text-center">Variance</th>
+                            <th className="px-4 py-2.5 text-center">Var %</th>
+                            <th className="px-4 py-2.5 text-center">Flag</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(auditInventoryVariance.items || []).slice(0, 20).map((item: any) => (
+                            <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{item.itemName}</div>
+                                <div className="text-[10px] text-slate-400">{item.category}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{item.outletName}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-700">{item.currentStock} {item.unit}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.estimatedConsumption}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.theoreticalRemaining.toFixed(1)}</td>
+                              <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">{item.variance > 0 ? `+${item.variance}` : item.variance}</td>
+                              <td className="px-4 py-3 text-center font-bold">
+                                <span className={item.variancePct > 12 ? "text-rose-600" : item.variancePct > 5 ? "text-amber-600" : "text-emerald-600"}>
+                                  {item.variancePct}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                  item.flagLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                                  item.flagLevel === "High" ? "bg-amber-100 text-amber-700" :
+                                  item.flagLevel === "Medium" ? "bg-blue-100 text-blue-700" :
+                                  "bg-emerald-100 text-emerald-700"
+                                }`}>{item.flagLevel}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 4. POS DISCREPANCIES ──────────────────────────── */}
+              {auditSubTab === "pos" && !auditLoading && auditPosDiscrepancies && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Mismatch (₹)", value: `₹${(auditPosDiscrepancies.summary?.totalMismatch || 0).toLocaleString("en-IN")}`, color: "text-rose-600" },
+                      { label: "Critical Outlets", value: auditPosDiscrepancies.summary?.criticalOutlets ?? 0, color: "text-rose-600" },
+                      { label: "High Risk", value: auditPosDiscrepancies.summary?.highRisk ?? 0, color: "text-amber-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditPosDiscrepancies.discrepancies || []).map((d: any) => (
+                      <div key={d.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${d.riskLevel === "Critical" ? "border-rose-200" : d.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">{d.outletName}</h4>
+                            <p className="text-[10px] text-slate-400">{d.city} · Manager: {d.manager}</p>
+                          </div>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            d.riskLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                            d.riskLevel === "High" ? "bg-amber-100 text-amber-700" :
+                            d.riskLevel === "Medium" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"
+                          }`}>{d.riskLevel}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">MISMATCH</span>
+                            <span className="font-black text-rose-600">₹{d.mismatch.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">CASH RATIO</span>
+                            <span className="font-black text-amber-600">{d.cashRatio}%</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">EST. VOIDS</span>
+                            <span className="font-black text-slate-700">{d.estimatedVoids}</span>
+                          </div>
+                        </div>
+                        {d.overrideFlag && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-800 font-semibold">
+                            ⚠️ {d.overrideFlag}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400 flex gap-4">
+                          <span>Cash: ₹{d.paymentSplit.cash.toLocaleString("en-IN")}</span>
+                          <span>Card: ₹{d.paymentSplit.card.toLocaleString("en-IN")}</span>
+                          <span>UPI: ₹{d.paymentSplit.upi.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 5. SHIFT VERIFICATION ─────────────────────────── */}
+              {auditSubTab === "shifts" && !auditLoading && auditShiftVerification && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Cert Gaps", value: auditShiftVerification.summary?.totalCertGaps ?? 0, color: "text-rose-600" },
+                      { label: "Understaffed Outlets", value: auditShiftVerification.summary?.understaffedOutlets ?? 0, color: "text-amber-600" },
+                      { label: "Missing Managers", value: auditShiftVerification.summary?.missingManagers ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {(auditShiftVerification.outlets || []).map((outlet: any) => (
+                    <div key={outlet.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${outlet.riskLevel === "Critical" ? "border-rose-200" : outlet.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">{outlet.outletName}</h4>
+                          <p className="text-[10px] text-slate-400">{outlet.city} · {outlet.manager}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${outlet.coverageFlag === "Adequate" ? "bg-emerald-100 text-emerald-700" : outlet.coverageFlag === "Borderline" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
+                            {outlet.coverageFlag}
+                          </span>
+                          {!outlet.managerPresent && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">No Manager On-Site</span>
+                          )}
+                          <span className="text-xs font-bold text-slate-600">Attendance: {outlet.attendanceRate}%</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-[11px]">
+                        {[
+                          { label: "Scheduled", val: outlet.scheduled },
+                          { label: "Active", val: outlet.active },
+                          { label: "Morning", val: outlet.shiftBreakdown.morning },
+                          { label: "Evening", val: outlet.shiftBreakdown.evening },
+                        ].map((s, i) => (
+                          <div key={i} className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-[9px] text-slate-400 block font-bold">{s.label}</span>
+                            <span className="font-black text-slate-700 text-base">{s.val}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {outlet.certificationGaps.length > 0 && (
+                        <div className="border border-rose-100 rounded-xl overflow-hidden">
+                          <div className="bg-rose-50 px-3 py-1.5 text-[10px] font-bold text-rose-700 uppercase">Certification Gaps ({outlet.certificationGaps.length})</div>
+                          <div className="divide-y divide-rose-50">
+                            {outlet.certificationGaps.slice(0, 4).map((gap: any) => (
+                              <div key={gap.staffId} className="px-3 py-2 flex justify-between text-[10px]">
+                                <span className="font-semibold text-slate-800">{gap.name} ({gap.role})</span>
+                                <span className="text-rose-600 font-bold">Rating: {gap.rating}/5</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── 6. FACILITY INCIDENTS ─────────────────────────── */}
+              {auditSubTab === "incidents" && !auditLoading && auditIncidents && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { label: "Open", value: auditIncidents.summary?.open ?? 0, color: "text-rose-600" },
+                      { label: "In Progress", value: auditIncidents.summary?.inProgress ?? 0, color: "text-amber-600" },
+                      { label: "Resolved", value: auditIncidents.summary?.resolved ?? 0, color: "text-emerald-600" },
+                      { label: "Critical Priority", value: auditIncidents.summary?.critical ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditIncidents.incidents || []).map((inc: any) => (
+                      <div key={inc.id} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${inc.priority === "Critical" ? "border-rose-200" : inc.priority === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.priority === "Critical" ? "bg-rose-100 text-rose-700" : inc.priority === "High" ? "bg-amber-100 text-amber-700" : inc.priority === "Medium" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                                {inc.priority}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600">{inc.incident_type}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.status === "Resolved" ? "bg-emerald-100 text-emerald-700" : inc.status === "In Progress" ? "bg-blue-100 text-blue-700" : "bg-rose-100 text-rose-700"}`}>
+                                {inc.status}
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{inc.title}</h4>
+                            <p className="text-[10px] text-slate-500 mt-1">{inc.outletName} · {inc.city}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">{inc.description}</p>
+                        {inc.assigned_to && (
+                          <p className="text-[10px] text-slate-400">Assigned: <span className="font-semibold text-slate-600">{inc.assigned_to}</span></p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          {inc.status !== "In Progress" && inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-progress`} onClick={() => handleUpdateIncident(inc.id, "In Progress")} className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-blue-700 transition-all">
+                              Mark In Progress
+                            </button>
+                          )}
+                          {inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-resolve`} onClick={() => handleUpdateIncident(inc.id, "Resolved")} className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-700 transition-all">
+                              ✓ Resolve
+                            </button>
+                          )}
+                          {inc.status === "Resolved" && (
+                            <span className="text-[10px] text-emerald-600 font-bold">✓ Resolved {inc.resolved_date ? `on ${inc.resolved_date}` : ""}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 7. ANOMALY FLAGS ──────────────────────────────── */}
+              {auditSubTab === "anomalies" && !auditLoading && auditAnomalies && (
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-2xl border border-slate-700 p-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">AI Anomaly Detection Engine</h3>
+                      <p className="text-[10px] text-slate-400">Cross-domain risk signals from inventory, POS, staffing, and audit sessions</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">CRITICAL</span>
+                        <span className="text-xl font-black text-rose-400">{auditAnomalies.summary?.critical ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">HIGH</span>
+                        <span className="text-xl font-black text-amber-400">{auditAnomalies.summary?.high ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">TOTAL</span>
+                        <span className="text-xl font-black text-slate-100">{auditAnomalies.summary?.total ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {(auditAnomalies.anomalies || []).map((anomaly: any) => (
+                      <div key={anomaly.id} className={`bg-white rounded-2xl border shadow-xs p-4 ${anomaly.severity === "Critical" ? "border-rose-200" : "border-amber-200"}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`text-xl shrink-0 ${anomaly.severity === "Critical" ? "text-rose-500" : "text-amber-500"}`}>
+                            {anomaly.severity === "Critical" ? "🔴" : "🟡"}
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${anomaly.severity === "Critical" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                                  {anomaly.severity}
+                                </span>
+                                <h4 className="text-xs font-bold text-slate-900">{anomaly.type}</h4>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">{anomaly.timestamp}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed">{anomaly.description}</p>
+                            <div className="bg-slate-50 rounded-xl border border-slate-100 px-3 py-2">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Recommended Action</span>
+                              <p className="text-[10px] text-slate-700 font-semibold">{anomaly.action}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(auditAnomalies.anomalies || []).length === 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-emerald-600 font-bold text-sm">
+                        ✅ No anomalies detected. Franchise network is operating within normal parameters.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 8. AUDIT REPORT ───────────────────────────────── */}
+              {auditSubTab === "report" && !auditLoading && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Network Compliance Audit Report</h3>
+                        <p className="text-xs text-slate-400">Auto-generated from all completed audit sessions · {new Date().toLocaleDateString("en-IN")}</p>
+                      </div>
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">Live Data</span>
+                    </div>
+
+                    {/* Per-outlet grading */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Outlet-Level Compliance Grades</h4>
+                      <div className="border border-slate-100 rounded-xl overflow-hidden text-xs">
+                        <div className="bg-slate-50 px-4 py-2 grid grid-cols-5 font-bold text-slate-500 text-[10px] uppercase tracking-wider">
+                          <span>Outlet</span>
+                          <span className="text-center">Score</span>
+                          <span className="text-center">Grade</span>
+                          <span className="text-center">Hygiene</span>
+                          <span className="text-center">Food Safety</span>
+                        </div>
+                        <div className="divide-y divide-slate-50">
+                          {auditSessions
+                            .filter((s: any) => s.passFail !== "Pending")
+                            .sort((a: any, b: any) => b.overallScore - a.overallScore)
+                            .map((s: any) => {
+                              const grade = s.overallScore >= 90 ? "A" : s.overallScore >= 80 ? "B" : s.overallScore >= 70 ? "C" : "F";
+                              const gradeColor = grade === "A" ? "text-emerald-600" : grade === "B" ? "text-blue-600" : grade === "C" ? "text-amber-600" : "text-rose-600";
+                              return (
+                                <div key={s.id} className="px-4 py-2.5 grid grid-cols-5 items-center hover:bg-slate-50/50">
+                                  <span className="font-semibold text-slate-800">{s.outletName}</span>
+                                  <span className="text-center font-black text-slate-700">{s.overallScore.toFixed(1)}</span>
+                                  <span className={`text-center font-black text-lg ${gradeColor}`}>{grade}</span>
+                                  <span className="text-center text-slate-600">{s.hygieneScore.toFixed(0)}%</span>
+                                  <span className="text-center text-slate-600">{s.foodSafetyScore.toFixed(0)}%</span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top risks */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Top Risk Areas</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { risk: "Cold Chain Compliance", detail: "2 outlets flagged for temperature deviations above safe threshold", severity: "Critical" },
+                          { risk: "Cash POS Reconciliation", detail: "Payment settlement mismatch detected across 3 outlets", severity: "High" },
+                          { risk: "Staff Certification Gaps", detail: "Multiple staff members below re-certification threshold", severity: "High" },
+                        ].map((r, i) => (
+                          <div key={i} className={`p-3 rounded-xl border text-xs ${r.severity === "Critical" ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"}`}>
+                            <span className={`text-[9px] font-bold uppercase ${r.severity === "Critical" ? "text-rose-600" : "text-amber-600"}`}>{r.severity}</span>
+                            <p className="font-bold text-slate-900 mt-0.5">{r.risk}</p>
+                            <p className="text-[10px] text-slate-600 mt-1">{r.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommended actions */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Recommended Actions</h4>
+                      <div className="space-y-2">
+                        {[
+                          "📦 Immediate refrigeration audit at Anna Nagar Cafe — verify cold chain compliance and replace faulty unit",
+                          "💳 Pull POS void logs for Mumbai Central and cross-reference with supervisor sign-off records",
+                          "👤 Schedule mandatory food safety re-certification for flagged staff before next audit cycle",
+                          "🔧 Prioritize resolution of 2 Critical facility incidents within 24-hour SLA window",
+                          "📋 Establish monthly rolling audit schedule — minimum quarterly visits per outlet",
+                        ].map((action, i) => (
+                          <div key={i} className="bg-slate-50 rounded-xl border border-slate-100 px-4 py-2.5 text-xs text-slate-700 flex items-start gap-2">
+                            <span className="text-slate-400 font-bold text-[10px] shrink-0 mt-0.5">{i + 1}.</span>
+                            <span className="leading-relaxed">{action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OTHER STEPS (1, 2, 8, 9, 10) Rendering within section */}
+          {![3, 4, 5, 6, 7].includes(activeStepId) && (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
                 <Icons.Workflow />
@@ -2258,6 +3096,7 @@ export default function OperationsDashboard() {
               </div>
             </div>
           )}
+
         </main>
       </div>
       </div>

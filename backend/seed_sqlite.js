@@ -23,8 +23,14 @@ async function main() {
       DROP TABLE IF EXISTS marketing_metrics;
       DROP TABLE IF EXISTS campaigns;
       DROP TABLE IF EXISTS customers;
+      DROP TABLE IF EXISTS audit_media_uploads;
+      DROP TABLE IF EXISTS audit_checklist_items;
+      DROP TABLE IF EXISTS audit_findings;
+      DROP TABLE IF EXISTS audit_sessions;
+      DROP TABLE IF EXISTS audit_incidents;
     `);
-    console.log("Dropped old tables cleanly (including marketing tables).");
+    console.log("Dropped old tables cleanly (including marketing and audit tables).");
+
 
     // 1. Outlets
     db.exec(`
@@ -474,6 +480,238 @@ async function main() {
     }
     console.log("Seeded marketing metrics and computed ROI reports in SQLite.");
 
+    // ─── AUDIT AGENT SEED DATA ────────────────────────────────────────────────
+
+    // Create audit tables
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        outlet_id INTEGER NOT NULL,
+        auditor_name TEXT NOT NULL,
+        audit_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'In Progress',
+        overall_score REAL NOT NULL DEFAULT 0,
+        max_score REAL NOT NULL DEFAULT 100,
+        pass_fail TEXT NOT NULL DEFAULT 'Pending',
+        hygiene_score REAL NOT NULL DEFAULT 0,
+        food_safety_score REAL NOT NULL DEFAULT 0,
+        sop_score REAL NOT NULL DEFAULT 0,
+        facility_score REAL NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_checklist_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL DEFAULT 'Pending',
+        score_weight REAL NOT NULL DEFAULT 5,
+        notes TEXT,
+        photo_url TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (session_id) REFERENCES audit_sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        severity TEXT NOT NULL,
+        finding_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Open',
+        assigned_to TEXT,
+        due_date TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (session_id) REFERENCES audit_sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_media_uploads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        item_id INTEGER,
+        file_name TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        uploaded_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (session_id) REFERENCES audit_sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_incidents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        outlet_id INTEGER NOT NULL,
+        session_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        incident_type TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'Medium',
+        status TEXT NOT NULL DEFAULT 'Open',
+        assigned_to TEXT,
+        reported_date TEXT NOT NULL,
+        resolved_date TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    // Seed audit sessions
+    const insertSession = db.prepare(`
+      INSERT INTO audit_sessions (outlet_id, auditor_name, audit_date, status, overall_score, max_score, pass_fail, hygiene_score, food_safety_score, sop_score, facility_score, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const auditSessionsData = [
+      // Outlet 1 - Passed
+      [1, 'Priya Sharma (Regional Auditor)', '2026-08-10', 'Completed', 84.5, 100, 'Pass', 88.0, 91.0, 80.0, 79.0, 'Overall strong performance. Minor SOP gaps noted at cashier station.'],
+      // Outlet 1 - Failed (older)
+      [1, 'Arjun Mehta (Field Inspector)', '2026-07-15', 'Completed', 61.2, 100, 'Fail', 55.0, 62.0, 65.0, 63.0, 'Critical hygiene failures in cold storage area. Escalation raised to Regional Manager.'],
+      // Outlet 2 - Passed
+      [2, 'Priya Sharma (Regional Auditor)', '2026-08-09', 'Completed', 91.3, 100, 'Pass', 95.0, 94.0, 88.0, 88.0, 'Excellent compliance across all categories. Model outlet.'],
+      // Outlet 2 - In Progress
+      [2, 'Rahul Gupta (Junior Auditor)', '2026-08-12', 'In Progress', 0, 100, 'Pending', 0, 0, 0, 0, 'Live audit in progress — checklist partially completed.'],
+      // Outlet 3 - Escalated
+      [3, 'Arjun Mehta (Field Inspector)', '2026-08-08', 'Escalated', 52.0, 100, 'Fail', 44.0, 48.0, 60.0, 56.0, 'Multiple critical food safety violations. Escalated to Regional Director immediately.'],
+      // Outlet 4 - Passed
+      [4, 'Kavya Nair (Compliance Lead)', '2026-08-07', 'Completed', 78.9, 100, 'Pass', 83.0, 79.0, 76.0, 77.0, 'Good overall. Recommend refresher on closing procedures.'],
+      // Outlet 5 - Completed
+      [5, 'Priya Sharma (Regional Auditor)', '2026-08-06', 'Completed', 73.5, 100, 'Pass', 76.0, 72.0, 74.0, 72.0, 'Passed with marginal scores. Action plan dispatched.'],
+    ];
+
+    const sessionIds = [];
+    for (const s of auditSessionsData) {
+      const result = insertSession.run(...s);
+      sessionIds.push(result.lastInsertRowid);
+    }
+    console.log(`Seeded ${sessionIds.length} audit sessions.`);
+
+    // Seed checklist items for completed sessions
+    const insertItem = db.prepare(`
+      INSERT INTO audit_checklist_items (session_id, category, question, answer, score_weight, notes, photo_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const checklistTemplates = [
+      { category: 'Hygiene', question: 'All food contact surfaces sanitised and free of residue', weight: 8 },
+      { category: 'Hygiene', question: 'Handwashing stations stocked with soap and sanitiser', weight: 7 },
+      { category: 'Hygiene', question: 'Staff wearing appropriate PPE (gloves, hairnets, aprons)', weight: 8 },
+      { category: 'Hygiene', question: 'Waste bins sealed, labelled, and emptied per schedule', weight: 6 },
+      { category: 'Hygiene', question: 'Restrooms clean, stocked and inspected within last 2 hours', weight: 6 },
+      { category: 'Hygiene', question: 'Floors, walls, and ceilings free of mould and grease buildup', weight: 5 },
+      { category: 'Food Safety', question: 'All perishable items stored at correct temperature (0–5°C)', weight: 10 },
+      { category: 'Food Safety', question: 'FIFO stock rotation applied to all ingredient batches', weight: 8 },
+      { category: 'Food Safety', question: 'No expired or near-expiry items in active storage zones', weight: 10 },
+      { category: 'Food Safety', question: 'Food thermometers calibrated and logs signed today', weight: 7 },
+      { category: 'Food Safety', question: 'Allergen menu information displayed and up to date', weight: 6 },
+      { category: 'Food Safety', question: 'Pest control records current and no active pest signs', weight: 9 },
+      { category: 'Opening Procedure', question: 'Opening checklist signed by manager-on-duty', weight: 6 },
+      { category: 'Opening Procedure', question: 'All equipment powered on and tested before opening', weight: 7 },
+      { category: 'Opening Procedure', question: 'Cash drawer float verified and counted', weight: 8 },
+      { category: 'Opening Procedure', question: 'POS system online and syncing to HQ', weight: 7 },
+      { category: 'Opening Procedure', question: 'Temperature logs completed for all cold storage units', weight: 6 },
+      { category: 'Closing Procedure', question: 'Closing checklist signed by manager-on-duty', weight: 6 },
+      { category: 'Closing Procedure', question: 'End-of-day cash reconciliation completed and locked', weight: 10 },
+      { category: 'Closing Procedure', question: 'All perishables properly sealed and refrigerated', weight: 8 },
+      { category: 'Closing Procedure', question: 'Security alarm set and exit doors locked', weight: 8 },
+      { category: 'Closing Procedure', question: 'Deep cleaning of prep surfaces completed', weight: 7 },
+      { category: 'SOP', question: 'Brand standard uniform worn by all on-shift staff', weight: 5 },
+      { category: 'SOP', question: 'Customer greeting SOP followed at POS (within 30 sec)', weight: 6 },
+      { category: 'SOP', question: 'Order accuracy rate above 98% based on today\'s log review', weight: 8 },
+      { category: 'SOP', question: 'Upsell prompts correctly applied per training manual', weight: 5 },
+      { category: 'SOP', question: 'Incident log book updated and accessible', weight: 6 },
+      { category: 'SOP', question: 'Staff certifications (food safety, first aid) visible on-site', weight: 7 },
+    ];
+
+    // Answers matrix for completed sessions [sessionIdx][itemIdx]
+    // Session 0 (outlet1, pass=84.5): mostly pass, few fails
+    const answersS0 = ['Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass'];
+    // Session 1 (outlet1, fail=61.2): many fails
+    const answersS1 = ['Fail','Fail','Pass','Fail','Fail','Pass','Fail','Pass','Fail','Fail','Pass','Fail','Pass','Pass','Fail','Pass','Pass','Pass','Fail','Fail','Pass','Pass','Fail','Pass','Fail','Pass','Fail','Pass'];
+    // Session 2 (outlet2, pass=91.3): mostly pass
+    const answersS2 = ['Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass'];
+    // Session 3 (outlet2, in progress): pending mostly
+    const answersS3 = ['Pass','Pass','Pass','Pending','Pending','Pending','Pass','Pending','Pending','Pending','Pending','Pending','Pass','Pass','Pending','Pending','Pending','Pending','Pending','Pending','Pending','Pending','Pass','Pass','Pending','Pending','Pending','Pending'];
+    // Session 4 (outlet3, escalated fail=52): heavy fails
+    const answersS4 = ['Fail','Pass','Fail','Fail','Fail','Fail','Fail','Fail','Fail','Fail','Pass','Fail','Pass','Pass','Fail','Pass','Fail','Pass','Fail','Fail','Pass','Pass','Pass','Pass','Fail','Pass','Fail','Pass'];
+    // Session 5 (outlet4, pass=78.9)
+    const answersS5 = ['Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Fail','Pass','Pass','Pass','Pass','Pass'];
+    // Session 6 (outlet5, pass=73.5)
+    const answersS6 = ['Pass','Pass','Fail','Pass','Pass','Pass','Pass','Pass','Fail','Pass','Fail','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass','Pass','Fail','Pass','Pass','Pass'];
+
+    const allAnswers = [answersS0, answersS1, answersS2, answersS3, answersS4, answersS5, answersS6];
+    const photoUrls = ['https://placehold.co/400x300/1e293b/94a3b8?text=Evidence+Photo', null];
+
+    for (let si = 0; si < sessionIds.length; si++) {
+      for (let qi = 0; qi < checklistTemplates.length; qi++) {
+        const t = checklistTemplates[qi];
+        const answer = allAnswers[si][qi] || 'Pending';
+        const note = answer === 'Fail' ? 'Non-compliance observed. Photo documentation attached.' : null;
+        const photo = answer === 'Fail' ? photoUrls[0] : null;
+        insertItem.run(sessionIds[si], t.category, t.question, answer, t.weight, note, photo);
+      }
+    }
+    console.log(`Seeded audit checklist items for all sessions.`);
+
+    // Seed findings for failed sessions
+    const insertFinding = db.prepare(`
+      INSERT INTO audit_findings (session_id, severity, finding_type, description, status, assigned_to, due_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const findingsData = [
+      // Session 1 (outlet1, July fail)
+      [sessionIds[1], 'Critical', 'Food Safety', 'FAILED: All perishable items stored at correct temperature (0–5°C) — cold chain breach detected', 'Open', 'Outlet Manager - Mumbai Central', '2026-07-20'],
+      [sessionIds[1], 'Critical', 'Hygiene', 'FAILED: All food contact surfaces sanitised — visible contamination on prep counters', 'In Progress', 'Priya Sharma', '2026-07-18'],
+      [sessionIds[1], 'High', 'Hygiene', 'FAILED: Handwashing stations not stocked — soap dispensers empty at 3 stations', 'Resolved', 'Outlet Manager', '2026-07-17'],
+      [sessionIds[1], 'High', 'Food Safety', 'FAILED: Expired items found in active cold storage (2 items, 3 days past date)', 'Open', 'Store Supervisor', '2026-07-21'],
+      [sessionIds[1], 'Medium', 'SOP', 'FAILED: Order accuracy log not maintained for the past 48 hours', 'Open', null, '2026-07-22'],
+      // Session 4 (outlet3, escalated)
+      [sessionIds[4], 'Critical', 'Food Safety', 'FAILED: Perishable storage temperature at 9°C — exceeds safe zone. Food safety risk.', 'Open', 'Regional Manager - Bangalore', '2026-08-09'],
+      [sessionIds[4], 'Critical', 'Hygiene', 'FAILED: Pest signs (rodent droppings) observed in dry storage room', 'Open', 'Facility Team', '2026-08-09'],
+      [sessionIds[4], 'Critical', 'Food Safety', 'FAILED: Expired items in active kitchen use — 4 items past sell-by date', 'Open', 'Outlet Manager - Bangalore', '2026-08-09'],
+      [sessionIds[4], 'High', 'Hygiene', 'FAILED: Floors in prep area visibly greasy, slip hazard not addressed', 'In Progress', 'Cleaning Crew Lead', '2026-08-10'],
+      [sessionIds[4], 'High', 'Financial', 'FAILED: Cash drawer reconciliation missing for last 2 shifts', 'Open', 'Store Manager', '2026-08-10'],
+      [sessionIds[4], 'High', 'Staffing', 'FAILED: Staff certifications not visible/accessible on-site', 'Open', 'HR - South Region', '2026-08-12'],
+    ];
+
+    for (const f of findingsData) insertFinding.run(...f);
+    console.log(`Seeded ${findingsData.length} audit findings.`);
+
+    // Seed media uploads
+    const insertMedia = db.prepare(`
+      INSERT INTO audit_media_uploads (session_id, file_name, file_url) VALUES (?, ?, ?)
+    `);
+    const mediaData = [
+      [sessionIds[1], 'cold_storage_breach.jpg', 'https://placehold.co/800x600/450a0a/fca5a5?text=Cold+Storage+Temp+Breach'],
+      [sessionIds[1], 'surface_contamination.jpg', 'https://placehold.co/800x600/450a0a/fca5a5?text=Surface+Contamination+Found'],
+      [sessionIds[4], 'pest_evidence.jpg', 'https://placehold.co/800x600/431407/fdba74?text=Pest+Droppings+Found'],
+      [sessionIds[4], 'temperature_log.jpg', 'https://placehold.co/800x600/1e1b4b/a5b4fc?text=Temperature+Log+Violation'],
+      [sessionIds[0], 'clean_station.jpg', 'https://placehold.co/800x600/052e16/86efac?text=Clean+Food+Station+Verified'],
+      [sessionIds[2], 'model_outlet.jpg', 'https://placehold.co/800x600/052e16/86efac?text=Model+Outlet+Compliance'],
+    ];
+    for (const m of mediaData) insertMedia.run(...m);
+    console.log(`Seeded ${mediaData.length} audit media uploads.`);
+
+    // Seed audit incidents
+    const insertIncident = db.prepare(`
+      INSERT INTO audit_incidents (outlet_id, session_id, title, description, incident_type, priority, status, assigned_to, reported_date, resolved_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const incidentData = [
+      [3, sessionIds[4], 'Refrigeration Unit Malfunction — Cold Chain Breach', 'Primary cold storage unit failed overnight. Temperature rose to 9°C, compromising all perishables. Unit requires immediate replacement or repair.', 'Equipment', 'Critical', 'Open', 'Facility Team - South Zone', '2026-08-08', null],
+      [3, sessionIds[4], 'Pest Infestation — Dry Storage Room', 'Rodent droppings identified during routine audit. Full pest control sweep required. All dry goods in affected zone quarantined.', 'Hygiene', 'Critical', 'In Progress', 'Pest Control Vendor', '2026-08-08', null],
+      [1, sessionIds[1], 'Cash Drawer Reconciliation Discrepancy', 'End-of-day cash count short by ₹2,840 on July 15 shift. POS logs reviewed — 3 manual voids flagged without supervisor approval.', 'POS', 'High', 'In Progress', 'Priya Sharma (Auditor)', '2026-07-15', null],
+      [2, null, 'Broken AC Unit — Customer Seating Area', 'Primary HVAC unit in customer-facing seating zone non-functional. Customer complaints logged. Ambient temperature at 31°C during peak hours.', 'Facility', 'High', 'In Progress', 'Maintenance - West Zone', '2026-08-05', null],
+      [4, sessionIds[5], 'Fire Extinguisher Inspection Overdue', 'Two fire extinguishers in kitchen zone have inspection tags expired by 60+ days. Regulatory non-compliance risk.', 'Safety', 'High', 'Open', 'Safety Officer', '2026-08-07', null],
+      [5, null, 'POS Terminal Unresponsive During Peak Hours', 'Terminal 2 at Outlet 5 froze twice during morning rush, causing order queue backup. IT support notified.', 'POS', 'Medium', 'Resolved', 'IT Support Desk', '2026-08-01', '2026-08-03'],
+      [1, null, 'Broken Display Signage — Brand Compliance Gap', 'FranchiseOps branded menu board display cracked and showing outdated seasonal menu. Brand compliance violation.', 'Facility', 'Medium', 'Open', 'Brand Team - HQ', '2026-08-10', null],
+      [2, sessionIds[2], 'Hand Sanitizer Station Malfunction — Front Entrance', 'Auto-dispenser at entrance non-functional. Manual station installed as interim fix. Permanent replacement ordered.', 'Hygiene', 'Low', 'Resolved', 'Outlet Manager - Pune', '2026-08-06', '2026-08-09'],
+    ];
+    for (const inc of incidentData) insertIncident.run(...inc);
+    console.log(`Seeded ${incidentData.length} audit incidents.`);
+    console.log(`✅ Audit Agent seed complete.`);
+
+    // ─────────────────────────────────────────────────────────────────────────
     db.pragma('foreign_keys = ON');
 
     console.log(`\n🎉 SEED COMPLETE! SQLite database ready:`);
@@ -484,6 +722,7 @@ async function main() {
     console.log(`- ${salesCount} Daily Sales Records`);
     console.log(`- 120 Customer Profiles`);
     console.log(`- 9 Marketing Campaigns & associated metrics`);
+    console.log(`- 7 Audit Sessions + full checklist, findings, incidents`);
     console.log(`\nDatabase file: ${DB_PATH}`);
 
   } catch (err) {
@@ -493,3 +732,4 @@ async function main() {
 }
 
 main();
+
