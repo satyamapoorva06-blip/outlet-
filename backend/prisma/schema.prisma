@@ -93,3 +93,135 @@ model staff {
   updated_at         DateTime? @default(now())
   outlets            outlets   @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
 }
+
+model customers {
+  id                          Int       @id @default(autoincrement())
+  name                        String
+  email                       String    @unique
+  phone                       String?
+  age                         Int?
+  gender                      String?
+  total_spend                 Float     @default(0.0)
+  visit_count                 Int       @default(0)
+  calculated_engagement_score Float     @default(0.0)
+  segment                     String    @default("Standard")
+  created_at                  DateTime? @default(now())
+  updated_at                  DateTime? @default(now())
+}
+
+model campaigns {
+  id                Int                 @id @default(autoincrement())
+  name              String
+  channel           String
+  start_date        String
+  end_date          String
+  budget            Float
+  status            String              @default("Draft")
+  targeted_segments String?
+  created_at        DateTime?           @default(now())
+  updated_at        DateTime?           @default(now())
+  marketing_metrics marketing_metrics[]
+  roi_reports       roi_reports[]
+}
+
+model marketing_metrics {
+  id                    Int       @id @default(autoincrement())
+  campaign_id           Int
+  clicks                Int       @default(0)
+  impressions           Int       @default(0)
+  pos_sales_conversions Int       @default(0)
+  sentiment_score       Float     @default(0.0)
+  coupon_redemptions    Int       @default(0)
+  recorded_date         String
+  created_at            DateTime? @default(now())
+  campaigns             campaigns @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+}
+
+model roi_reports {
+  id                   Int       @id @default(autoincrement())
+  campaign_id          Int
+  total_spend          Float
+  attributed_revenue   Float
+  net_roi              Float
+  efficiency_ratio     Float
+  calculated_timestamp DateTime? @default(now())
+  created_at           DateTime? @default(now())
+  campaigns            campaigns @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+}
+
+// ─── AUDIT AGENT MODELS ───────────────────────────────────────────────────────
+
+model audit_sessions {
+  id                    Int                    @id @default(autoincrement())
+  outlet_id             Int
+  auditor_name          String
+  audit_date            String
+  status                String                 @default("In Progress") // In Progress | Completed | Escalated
+  overall_score         Float                  @default(0)
+  max_score             Float                  @default(100)
+  pass_fail             String                 @default("Pending") // Pass | Fail | Pending
+  hygiene_score         Float                  @default(0)
+  food_safety_score     Float                  @default(0)
+  sop_score             Float                  @default(0)
+  facility_score        Float                  @default(0)
+  notes                 String?
+  created_at            DateTime?              @default(now())
+  updated_at            DateTime?              @default(now())
+  checklist_items       audit_checklist_items[]
+  findings              audit_findings[]
+  media_uploads         audit_media_uploads[]
+}
+
+model audit_checklist_items {
+  id              Int             @id @default(autoincrement())
+  session_id      Int
+  category        String          // Hygiene | Food Safety | Opening Procedure | Closing Procedure | SOP
+  question        String
+  answer          String          @default("Pending") // Pass | Fail | N/A | Pending
+  score_weight    Float           @default(5)
+  notes           String?
+  photo_url       String?
+  created_at      DateTime?       @default(now())
+  session         audit_sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  media_uploads   audit_media_uploads[]
+}
+
+model audit_findings {
+  id              Int             @id @default(autoincrement())
+  session_id      Int
+  severity        String          // Critical | High | Medium | Low
+  finding_type    String          // Hygiene | Financial | Inventory | Staffing | Facility | SOP
+  description     String
+  status          String          @default("Open") // Open | In Progress | Resolved
+  assigned_to     String?
+  due_date        String?
+  created_at      DateTime?       @default(now())
+  session         audit_sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade)
+}
+
+model audit_media_uploads {
+  id          Int                    @id @default(autoincrement())
+  session_id  Int
+  item_id     Int?
+  file_name   String
+  file_url    String
+  uploaded_at DateTime?              @default(now())
+  session     audit_sessions         @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  item        audit_checklist_items? @relation(fields: [item_id], references: [id], onDelete: SetNull)
+}
+
+model audit_incidents {
+  id              Int       @id @default(autoincrement())
+  outlet_id       Int
+  session_id      Int?
+  title           String
+  description     String
+  incident_type   String    // Facility | Equipment | Safety | Hygiene | POS
+  priority        String    @default("Medium") // Critical | High | Medium | Low
+  status          String    @default("Open") // Open | In Progress | Resolved
+  assigned_to     String?
+  reported_date   String
+  resolved_date   String?
+  created_at      DateTime? @default(now())
+  updated_at      DateTime? @default(now())
+}

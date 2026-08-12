@@ -2,27 +2,25 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import api from "./lib/api";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  Legend,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Legend,
-  LineChart,
-  Line
+  ResponsiveContainer
 } from "recharts";
+import MapComponent from "./components/MapComponent";
+import CompareModal from "./components/CompareModal";
+import AuthModal from "./components/AuthModal";
 import { useAuth } from "./context/AuthContext";
-
-const MapComponent = dynamic(() => import("./components/MapComponent"), { ssr: false });
-const CompareModal = dynamic(() => import("./components/CompareModal"), { ssr: false });
-const AuthModal = dynamic(() => import("./components/AuthModal"), { ssr: false });
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const Icons = {
@@ -152,8 +150,6 @@ const WORKFLOW_STEPS = [
   { id: 10, name: "Dashboard & Alerts",       icon: "Dashboard",     category: "output", desc: "Serves high-level summaries for the franchisor and triggers real-time alerts for critical anomalies.", active: false },
 ];
 
-// marketing slides replaced by tabbed marketingSubTab for a staff-like layout
-
 // Base URL is configured in lib/api.ts
 
 interface AiInsight {
@@ -267,32 +263,6 @@ export default function OperationsDashboard() {
   const [healthScores, setHealthScores] = useState<any[]>([]);
   const [underperformingStores, setUnderperformingStores] = useState<any[]>([]);
 
-  // Marketing Campaign Analytics
-  const [marketingCampaigns, setMarketingCampaigns] = useState<any[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
-  const [marketingMetrics, setMarketingMetrics] = useState<any>(null);
-  const [marketingRecommendations, setMarketingRecommendations] = useState<string[]>([]);
-  const [marketingError, setMarketingError] = useState<string | null>(null);
-  const [marketingLoading, setMarketingLoading] = useState(false);
-  const [marketingSubTab, setMarketingSubTab] = useState<'summary'|'roi'|'channels'|'social'|'ai'|'budget'|'signals'|'actions'>('summary');
-  const [scheduleFrequency, setScheduleFrequency] = useState<string>("weekly");
-  const [scheduleNextRun, setScheduleNextRun] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [scheduleMessage, setScheduleMessage] = useState<string | null>(null);
-  const [socialConnections, setSocialConnections] = useState<any[]>([]);
-  const [socialDraft, setSocialDraft] = useState<string>("");
-  const [socialChannels, setSocialChannels] = useState<string[]>([]);
-  const [socialSchedule, setSocialSchedule] = useState<string>("");
-  const [socialMessage, setSocialMessage] = useState<string | null>(null);
-  const [socialSaving, setSocialSaving] = useState(false);
-  const [optimizationChannels, setOptimizationChannels] = useState<string[]>([]);
-  const [channelBudgets, setChannelBudgets] = useState<Record<string, number>>({});
-  const [channelToAdd, setChannelToAdd] = useState("youtube");
-  const [predictionChannel, setPredictionChannel] = useState("Social Media");
-  const [predictionBudget, setPredictionBudget] = useState("25000");
-  const [campaignPrediction, setCampaignPrediction] = useState<any>(null);
-  const [predictionLoading, setPredictionLoading] = useState(false);
-  const [predictionError, setPredictionError] = useState<string | null>(null);
-
   // Page Segmentation / Pagination State for Sales Records Table
   const [salesPage, setSalesPage] = useState<number>(1);
   const [salesPageSize, setSalesPageSize] = useState<number>(10);
@@ -318,6 +288,36 @@ export default function OperationsDashboard() {
   const [allocatingLoginTime, setAllocatingLoginTime] = useState<string>("");
   const [allocatingLogoffTime, setAllocatingLogoffTime] = useState<string>("");
   const [allocationSuccess, setAllocationSuccess] = useState<string | null>(null);
+
+  // Marketing Agent States
+  const [marketingSubTab, setMarketingSubTab] = useState<"overview" | "powerbi" | "ai" | "recommendations">("overview");
+  const [marketingKpis, setMarketingKpis] = useState<any>(null);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [aiSegments, setAiSegments] = useState<any>(null);
+  const [aiSentiment, setAiSentiment] = useState<any>(null);
+  const [aiForecast, setAiForecast] = useState<any[]>([]);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [predictBudget, setPredictBudget] = useState<number>(25000);
+  const [predictChannel, setPredictChannel] = useState<string>("Social Media");
+  const [predictionResult, setPredictionResult] = useState<any>(null);
+  const [applyingRecId, setApplyingRecId] = useState<number | null>(null);
+  const [rerunningAi, setRerunningAi] = useState<boolean>(false);
+
+  // Audit Agent States
+  const [auditSubTab, setAuditSubTab] = useState<"sessions" | "checklist" | "inventory" | "pos" | "shifts" | "incidents" | "anomalies" | "report">("sessions");
+  const [auditSessions, setAuditSessions] = useState<any[]>([]);
+  const [auditInventoryVariance, setAuditInventoryVariance] = useState<any>(null);
+  const [auditPosDiscrepancies, setAuditPosDiscrepancies] = useState<any>(null);
+  const [auditShiftVerification, setAuditShiftVerification] = useState<any>(null);
+  const [auditIncidents, setAuditIncidents] = useState<any>(null);
+  const [auditAnomalies, setAuditAnomalies] = useState<any>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [activeAuditSessionId, setActiveAuditSessionId] = useState<number | null>(null);
+  const [activeAuditSession, setActiveAuditSession] = useState<any>(null);
+  const [auditSessionLoading, setAuditSessionLoading] = useState(false);
+  const [newAuditForm, setNewAuditForm] = useState({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+  const [creatingAudit, setCreatingAudit] = useState(false);
+  const [checklistUpdating, setChecklistUpdating] = useState<number | null>(null);
 
   // UI / Modal States
   const [loading, setLoading] = useState(false);
@@ -361,43 +361,24 @@ export default function OperationsDashboard() {
       Promise.all([
         api.get("/sales/summary", { params: { outletId: selectedOutlet, startDate, endDate } }),
         api.get("/sales/trends", { params: { outletId: selectedOutlet, startDate, endDate } }),
-        api.get("/sales/list", { params })
+        api.get("/sales/list", { params }),
+        api.get("/outlets/locations"),
+        api.get("/outlets/health-scores"),
+        api.get("/outlets/underperforming")
       ])
-        .then(([sumRes, trendRes, listRes]) => {
+        .then(([sumRes, trendRes, listRes, mapRes, healthRes, underRes]) => {
           setSummary(sumRes.data);
           setTrends(trendRes.data);
           setSalesList(listRes.data.records);
           setTotalSalesRecords(listRes.data.pagination.total);
+          setMapLocations(mapRes.data);
+          setHealthScores(healthRes.data);
+          setUnderperformingStores(underRes.data);
         })
         .catch((err) => console.error("Error fetching performance agent data:", err))
         .finally(() => setLoading(false));
     }
   }, [activeStepId, selectedOutlet, startDate, endDate, salesPage, salesPageSize]);
-
-  // Load the expensive analytics only when their tab is opened.
-  useEffect(() => {
-    if (activeStepId === 3 && performanceSubTab === "map") {
-      api.get("/outlets/locations")
-        .then((res) => setMapLocations(res.data))
-        .catch((err) => console.error("Error fetching outlet map data:", err));
-    }
-  }, [activeStepId, performanceSubTab]);
-
-  useEffect(() => {
-    if (activeStepId === 3 && performanceSubTab === "health") {
-      api.get("/outlets/health-scores")
-        .then((res) => setHealthScores(res.data))
-        .catch((err) => console.error("Error fetching health scores:", err));
-    }
-  }, [activeStepId, performanceSubTab]);
-
-  useEffect(() => {
-    if (activeStepId === 3 && performanceSubTab === "underperforming") {
-      api.get("/outlets/underperforming")
-        .then((res) => setUnderperformingStores(res.data))
-        .catch((err) => console.error("Error fetching underperforming outlets:", err));
-    }
-  }, [activeStepId, performanceSubTab]);
 
   useEffect(() => {
     if (activeStepId === 4) {
@@ -437,6 +418,185 @@ export default function OperationsDashboard() {
     }
   }, [activeStepId, selectedOutlet]);
 
+  // Marketing Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 6) {
+      setLoading(true);
+      Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/segmentation"),
+        api.get("/marketing/ai/sentiment"),
+        api.get("/marketing/ai/forecast"),
+        api.get("/marketing/ai/recommendations")
+      ])
+        .then(([kpisRes, campaignsRes, segRes, sentRes, foreRes, recRes]) => {
+          setMarketingKpis(kpisRes.data);
+          setCampaigns(campaignsRes.data);
+          setAiSegments(segRes.data);
+          setAiSentiment(sentRes.data);
+          setAiForecast(foreRes.data);
+          setAiRecommendations(recRes.data);
+        })
+        .catch((err) => console.error("Error loading marketing data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId]);
+
+  // Audit Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 7) {
+      setAuditLoading(true);
+      Promise.all([
+        api.get("/audit/sessions"),
+        api.get("/audit/inventory-variance"),
+        api.get("/audit/pos-discrepancies"),
+        api.get("/audit/shift-verification"),
+        api.get("/audit/incidents"),
+        api.get("/audit/anomalies"),
+      ])
+        .then(([sessRes, invRes, posRes, shiftRes, incRes, anomRes]) => {
+          setAuditSessions(sessRes.data);
+          setAuditInventoryVariance(invRes.data);
+          setAuditPosDiscrepancies(posRes.data);
+          setAuditShiftVerification(shiftRes.data);
+          setAuditIncidents(incRes.data);
+          setAuditAnomalies(anomRes.data);
+        })
+        .catch((err) => console.error("Error loading audit data:", err))
+        .finally(() => setAuditLoading(false));
+    }
+  }, [activeStepId, selectedOutlet]);
+
+  const handleLoadAuditSession = async (sessionId: number) => {
+    setActiveAuditSessionId(sessionId);
+    setAuditSessionLoading(true);
+    try {
+      const res = await api.get(`/audit/sessions/${sessionId}`);
+      setActiveAuditSession(res.data);
+    } catch (err) {
+      console.error("Error loading session detail:", err);
+    } finally {
+      setAuditSessionLoading(false);
+    }
+  };
+
+  const handleCreateAuditSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAuditForm.outletId || !newAuditForm.auditorName || !newAuditForm.auditDate) {
+      alert("Please fill in all required fields.");
+      return;
+    }
+    setCreatingAudit(true);
+    try {
+      const res = await api.post("/audit/sessions", {
+        outletId: parseInt(newAuditForm.outletId, 10),
+        auditorName: newAuditForm.auditorName,
+        auditDate: newAuditForm.auditDate,
+        notes: newAuditForm.notes,
+      });
+      // Load the new session immediately
+      await handleLoadAuditSession(res.data.sessionId);
+      setAuditSubTab("checklist");
+      setNewAuditForm({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+      // Refresh sessions list
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to create audit session.");
+    } finally {
+      setCreatingAudit(false);
+    }
+  };
+
+  const handleUpdateChecklistItem = async (itemId: number, answer: string, notes?: string) => {
+    setChecklistUpdating(itemId);
+    try {
+      await api.put(`/audit/checklist-items/${itemId}`, { answer, notes });
+      if (activeAuditSession) {
+        setActiveAuditSession((prev: any) => ({
+          ...prev,
+          checklist_items: prev.checklist_items.map((item: any) =>
+            item.id === itemId ? { ...item, answer, notes: notes || item.notes } : item
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("Error updating checklist item:", err);
+    } finally {
+      setChecklistUpdating(null);
+    }
+  };
+
+  const handleCompleteAuditSession = async (sessionId: number) => {
+    try {
+      const res = await api.post(`/audit/sessions/${sessionId}/complete`, {});
+      alert(`Audit completed! Score: ${res.data.overallScore}/100 — ${res.data.passFail}`);
+      await handleLoadAuditSession(sessionId);
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to complete audit session.");
+    }
+  };
+
+  const handleUpdateIncident = async (incidentId: number, status: string) => {
+    try {
+      await api.put(`/audit/incidents/${incidentId}`, {
+        status,
+        resolvedDate: status === "Resolved" ? new Date().toISOString().slice(0, 10) : null,
+      });
+      const incRes = await api.get("/audit/incidents");
+      setAuditIncidents(incRes.data);
+    } catch (err) {
+      console.error("Error updating incident:", err);
+    }
+  };
+
+  const handleApplyRecommendation = async (rec: any) => {
+    setApplyingRecId(rec.id);
+    try {
+      const res = await api.post("/marketing/recommendations/apply", {
+        reallocation_details: rec.reallocation_details,
+        campaign_id: rec.campaign_id
+      });
+      alert(res.data.message || "Recommendation applied successfully!");
+      // Reload states
+      setLoading(true);
+      const [kpisRes, campaignsRes, recRes] = await Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/recommendations")
+      ]);
+      setMarketingKpis(kpisRes.data);
+      setCampaigns(campaignsRes.data);
+      setAiRecommendations(recRes.data);
+    } catch (err: any) {
+      console.error("Error applying recommendation:", err);
+      alert(err.response?.data?.error || "Error applying recommendation");
+    } finally {
+      setApplyingRecId(null);
+      setLoading(false);
+    }
+  };
+
+  const handlePredictCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRerunningAi(true);
+    try {
+      const res = await api.post("/marketing/ai/predict", {
+        budget: Number(predictBudget),
+        channel: predictChannel
+      });
+      setPredictionResult(res.data);
+    } catch (err: any) {
+      console.error("Error predicting campaign:", err);
+      alert("Failed to predict campaign success.");
+    } finally {
+      setRerunningAi(false);
+    }
+  };
+
   const handleAllocateJob = async (staffId: number) => {
     if (!allocatingJob) return;
     try {
@@ -466,270 +626,15 @@ export default function OperationsDashboard() {
     }
   };
 
-  useEffect(() => {
-    if (activeStepId === 6) {
-      setMarketingLoading(true);
-      setMarketingError(null);
-      setMarketingSubTab('summary');
-      api
-        .get("/marketing/campaigns")
-        .then((res) => {
-          setMarketingCampaigns(res.data);
-          if (res.data.length > 0) {
-            setSelectedCampaignId(String(res.data[0].id));
-          }
-        })
-        .catch((err) => {
-          console.error("Error loading marketing campaigns:", err);
-          setMarketingError("Unable to load campaign data. Please try again later.");
-        })
-        .finally(() => setMarketingLoading(false));
-    }
-  }, [activeStepId]);
-
-  useEffect(() => {
-    const campaignId = selectedCampaignId;
-    if (activeStepId !== 6 || !campaignId) {
-      return;
-    }
-
-    setMarketingLoading(true);
-    setMarketingError(null);
-
-    Promise.allSettled([
-      api.get("/marketing/roi", { params: { campaignId } }),
-      api.get("/marketing/recommendations", { params: { campaignId } }),
-      api.get("/marketing/social-connections")
-    ])
-      .then(([roiResult, recResult, socialResult]) => {
-        if (roiResult.status === "fulfilled") {
-          setMarketingMetrics(roiResult.value.data);
-        } else {
-          // Older API deployments return campaign ROI data as part of the
-          // campaigns response instead of exposing the dedicated ROI route.
-          // Keep the dashboard usable while those deployments are upgraded.
-          const campaign = marketingCampaigns.find((item) => String(item.id) === campaignId);
-          const report = campaign?.roi_reports?.[0];
-          const cost = Number(campaign?.cost ?? campaign?.budget ?? report?.total_spend ?? 0);
-          const revenueDuring = Number(report?.attributed_revenue ?? 0);
-          const incrementalRevenue = Number(report?.net_roi ?? (revenueDuring - cost));
-          const roi = cost > 0 ? incrementalRevenue / cost : null;
-          const channel = campaign?.channel;
-
-          setMarketingMetrics({
-            campaignId: campaign?.id ?? campaignId,
-            name: campaign?.name ?? "Campaign",
-            period: {
-              start: campaign?.startDate ?? campaign?.start_date ?? "N/A",
-              end: campaign?.endDate ?? campaign?.end_date ?? "N/A"
-            },
-            revenueDuring,
-            revenueBefore: 0,
-            incrementalRevenue,
-            cost,
-            roi,
-            upliftPercent: null,
-            channels: channel ? [channel] : [],
-            channelInsights: []
-          });
-        }
-
-        if (recResult.status === "fulfilled") {
-          setMarketingRecommendations(recResult.value.data.recommendations || []);
-        } else {
-          setMarketingRecommendations([
-            "Review campaign performance by audience segment before changing spend.",
-            "Test new creative variations and compare conversion results.",
-            "Monitor campaign cost and attributed revenue each reporting period."
-          ]);
-        }
-
-        if (socialResult.status === "fulfilled") {
-          const connections = socialResult.value.data || [];
-          setSocialConnections(connections);
-          setSocialChannels(connections.filter((item: any) => item.connected).slice(0, 2).map((item: any) => item.id));
-        } else {
-          setSocialConnections([]);
-          setSocialChannels([]);
-        }
-      })
-      .catch((err) => {
-        console.error("Error loading marketing analytics:", err);
-        setMarketingError("Unable to compute campaign ROI and recommendations at this time.");
-      })
-      .finally(() => setMarketingLoading(false));
-  }, [activeStepId, selectedCampaignId]);
-
-  useEffect(() => {
-    if (!marketingMetrics) return;
-    const channels = marketingMetrics.channels || [];
-    setOptimizationChannels(channels);
-    setChannelBudgets(Object.fromEntries(channels.map((channel: string) => [channel, Math.round(100 / Math.max(1, channels.length))])));
-  }, [marketingMetrics?.campaignId]);
-
   const activeOutletName = useMemo(() => {
     if (selectedOutlet === "all") return "All Outlets";
     const found = outlets.find((o) => o.id === parseInt(selectedOutlet, 10));
     return found ? `${found.city} (${found.outlet_name})` : "Selected Outlet";
   }, [selectedOutlet, outlets]);
 
-  const handleExportReport = async () => {
-    if (!selectedCampaignId) return;
-    try {
-      const response = await api.get("/marketing/download", {
-        params: { campaignId: selectedCampaignId },
-        responseType: "blob"
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `campaign-${selectedCampaignId}-report.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Error exporting campaign report:", err);
-      setMarketingError("Unable to export the campaign report right now.");
-    }
-  };
-
-  const handleScheduleReport = async () => {
-    if (!selectedCampaignId) return;
-    try {
-      const res = await api.post("/marketing/schedules", {
-        campaignId: Number(selectedCampaignId),
-        frequency: scheduleFrequency,
-        nextRun: scheduleNextRun
-      });
-      setScheduleMessage(`Scheduled campaign report: ${res.data.frequency} from ${res.data.nextRun}`);
-    } catch (err) {
-      console.error("Error scheduling campaign report:", err);
-      setScheduleMessage("Unable to schedule report. Please try again.");
-    }
-  };
-
-  const handleSocialConnection = async (id: string, connected: boolean) => {
-    try {
-      const res = await api.put(`/marketing/social-connections/${id}`, { connected });
-      setSocialConnections((previous) => previous.map((item) => item.id === id ? res.data : item));
-      setSocialChannels((previous) => connected ? [...new Set([...previous, id])] : previous.filter((channel) => channel !== id));
-      setSocialMessage(`${res.data.name} ${connected ? "connected" : "disconnected"}.`);
-    } catch (err) { setSocialMessage("Could not update this social connection."); }
-  };
-
-  const handleSocialPost = async () => {
-    if (!socialDraft.trim() || socialChannels.length === 0) return;
-    setSocialSaving(true);
-    setSocialMessage(null);
-    try {
-      const res = await api.post("/marketing/social-posts", { message: socialDraft.trim(), channels: socialChannels, scheduledFor: socialSchedule || null, campaignId: Number(selectedCampaignId) });
-      setSocialMessage(res.data.status === "scheduled" ? "Post scheduled successfully." : "Post published to selected channels.");
-      setSocialDraft("");
-      setSocialSchedule("");
-    } catch (err: any) { setSocialMessage(err?.response?.data?.error || "Could not publish the post."); }
-    finally { setSocialSaving(false); }
-  };
-
-  const handleCampaignPrediction = async () => {
-    if (!selectedCampaignId) return;
-    const budget = Number(predictionBudget);
-    if (!Number.isFinite(budget) || budget <= 0) {
-      setPredictionError("Enter a valid target audience budget.");
-      return;
-    }
-    setPredictionLoading(true);
-    setPredictionError(null);
-    try {
-      const response = await api.post("/marketing/predict", {
-        campaignId: Number(selectedCampaignId),
-        channel: predictionChannel,
-        budget
-      });
-      setCampaignPrediction(response.data);
-    } catch (err: any) {
-      // Keep the predictor useful when the development API has not yet been
-      // restarted to load the prediction route.
-      if (err?.response?.status === 404) {
-        const campaign = marketingCampaigns.find((item) => String(item.id) === selectedCampaignId);
-        const attributedRevenue = Number(campaign?.attributedRevenue ?? campaign?.attributed_revenue ?? marketingMetrics?.incrementalRevenue ?? 0);
-        const roi = budget > 0 ? (attributedRevenue - budget) / budget : -1;
-        const score = Math.round(Math.max(5, Math.min(97, 52 + Math.max(-30, Math.min(35, roi * 22)) + 2)));
-        const predictedOutcome = score >= 75 ? "Likely successful" : score >= 55 ? "Promising — monitor closely" : "At risk";
-        setCampaignPrediction({
-          score,
-          predictedOutcome,
-          reasons: [
-            `The ${predictionChannel} scenario uses a Rs. ${budget.toLocaleString("en-IN")} target budget.`,
-            `Estimated return is ${roi >= 0 ? "positive" : "below break-even"} based on the selected campaign's attributed revenue.`
-          ]
-        });
-      } else {
-        setPredictionError(err?.response?.data?.error || "Unable to run the prediction right now.");
-      }
-    } finally {
-      setPredictionLoading(false);
-    }
-  };
-
   const aiInsights = useMemo(() => {
     return computeAiInsights(trends, salesList, activeOutletName);
   }, [trends, salesList, activeOutletName]);
-
-  const marketingChartData = useMemo(() => {
-    if (!marketingMetrics) return [];
-    const baseline = marketingMetrics.revenueBefore || 0;
-    const campaign = marketingMetrics.revenueDuring || 0;
-    return [
-      { label: "Baseline", revenue: baseline, cost: 0 },
-      { label: "Campaign", revenue: campaign, cost: marketingMetrics.cost || 0 },
-      { label: "Incremental", revenue: marketingMetrics.incrementalRevenue || 0, cost: 0 }
-    ];
-  }, [marketingMetrics]);
-
-  const campaignRankingData = useMemo(() => marketingCampaigns
-    .map((campaign) => {
-      const budget = Number(campaign.cost ?? campaign.budget ?? 0);
-      const attributedRevenue = Number(campaign.attributedRevenue ?? campaign.attributed_revenue ?? 0);
-      const roas = budget > 0 ? attributedRevenue / budget : null;
-      return {
-        ...campaign,
-        budget,
-        attributedRevenue,
-        roas,
-        channel: Array.isArray(campaign.channels) ? campaign.channels.join(", ") : campaign.channel || "Multi-channel",
-        status: roas === null ? "Pending" : roas >= 3 ? "Excellent" : roas >= 2 ? "Strong" : "Monitor"
-      };
-    })
-    .sort((a, b) => (b.roas ?? -1) - (a.roas ?? -1)), [marketingCampaigns]);
-
-  const aiMarketingInsight = useMemo(() => {
-    const roi = Number(marketingMetrics?.roi ?? 0);
-    const uplift = Number(marketingMetrics?.upliftPercent ?? 0);
-    const topCampaign = campaignRankingData[0];
-    const health = roi >= 1.5 ? "High growth" : roi >= 0.5 ? "Healthy" : "Needs attention";
-    const action = roi >= 1.5
-      ? "Scale the strongest channels gradually while monitoring conversion quality."
-      : roi >= 0
-        ? "Keep spend steady and test new creative before expanding the campaign."
-        : "Pause low-performing placements and move spend to the best-performing channel.";
-    return {
-      health,
-      action,
-      confidence: Math.min(96, Math.max(62, Math.round(72 + Math.abs(uplift) * 2))),
-      budgetChange: roi >= 1.5 ? "+20%" : roi >= 0.5 ? "+10%" : "Reallocate",
-      topCampaign,
-      roiPercent: roi * 100,
-      uplift
-    };
-  }, [marketingMetrics, campaignRankingData]);
-
-  const channelPerformanceData = useMemo(() => optimizationChannels.map((channel, index) => {
-    const insight = marketingMetrics?.channelInsights?.find((item: any) => item.channel === channel);
-    const score = insight?.roiScore ?? Math.max(35, 68 - index * 7);
-    const budget = channelBudgets[channel] ?? 0;
-    return { channel, score, budget, projectedLeads: Math.round(score * Math.max(1, budget) * 0.75), action: insight?.recommendation || "Run a small test campaign before scaling." };
-  }), [optimizationChannels, channelBudgets, marketingMetrics]);
 
   const handleToggleSelectLocation = (id: number) => {
     setSelectedLocationIds((prev) =>
@@ -1577,6 +1482,27 @@ export default function OperationsDashboard() {
                 </button>
               </div>
 
+              {staffInsights?.summary && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Active Staff</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">{staffInsights.summary.totalStaff} Members</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Monthly Payroll</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">₹{staffInsights.summary.totalMonthlyPayroll.toLocaleString('en-IN')}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Labor Cost Ratio</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">{staffInsights.summary.laborCostRatioPercentage}%</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Avg Rating</span>
+                    <div className="text-xl font-black text-amber-500 mt-1">★ {staffInsights.summary.averageRating}</div>
+                  </div>
+                </div>
+              )}
+
               {/* 1. STAFF ROSTER SUB-TAB (PAGE SEGMENTATION) */}
               {staffSubTab === "roster" && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
@@ -1806,7 +1732,7 @@ export default function OperationsDashboard() {
                               allocatingStaffId === member.id ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100'
                             }`}
                           >
-                            {allocatingStaffId === member.id ? '? Cancel' : '? Allocate'}
+                            {allocatingStaffId === member.id ? '✕ Cancel' : '✎ Allocate'}
                           </button>
                         </div>
 
@@ -1917,418 +1843,1239 @@ export default function OperationsDashboard() {
           {/* STEP 6: MARKETING AGENT */}
           {activeStepId === 6 && (
             <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">Marketing Command Center</h2>
-                    <p className="text-xs text-slate-500">Plan campaigns, evaluate ROI, connect social channels, and publish customer-facing updates from one place.</p>
+              {/* Feature Sub-Tabs Toggles */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMarketingSubTab("overview")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📈 Campaign Performance</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("powerbi")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "powerbi" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📊 PowerBI Embedded</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("ai")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "ai" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🤖 AI Marketing Engine</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("recommendations")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "recommendations" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>💡 AI Recommendations Panel ({aiRecommendations.length})</span>
+                </button>
+              </div>
+
+              {/* KPIs Header */}
+              {marketingKpis && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Net ROI</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">₹{marketingKpis.netRoi.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Efficiency: {marketingKpis.roas}x ROAS</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Campaign</label>
-                    <select
-                      value={selectedCampaignId}
-                      onChange={(e) => {
-                        setSelectedCampaignId(e.target.value);
-                        setMarketingSubTab('summary');
-                      }}
-                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {marketingCampaigns.map((campaign) => (
-                        <option key={campaign.id} value={campaign.id}>
-                          {campaign.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Total Attributed Revenue</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">₹{marketingKpis.attributedRevenue.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Total Spend: ₹{marketingKpis.totalSpend.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Avg CTR / Conv Rate</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">{marketingKpis.averageCtr}% / {marketingKpis.averageConvRate}%</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Interactive clicks</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Customer Engagement Index</span>
+                    <div className="text-xl font-black text-cyan-600 mt-1">{marketingKpis.engagementIndex} / 100</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">{marketingKpis.totalCustomers} profiles tracked</span>
                   </div>
                 </div>
+              )}
 
-                <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setMarketingSubTab('summary')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'summary' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Campaign Summary
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('roi')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'roi' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    ROI & Efficiency
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('channels')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'channels' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Channel Optimization
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('social')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'social' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Social Hub
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('ai')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'ai' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    ✨ AI Marketing Engine
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('budget')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'budget' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Budget Guidance
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('signals')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'signals' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Performance Signals
-                  </button>
-                  <button
-                    onClick={() => setMarketingSubTab('actions')}
-                    className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${marketingSubTab === 'actions' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                  >
-                    Recommendations & Actions
-                  </button>
+              {/* 1. CAMPAIGN PERFORMANCE OVERVIEW */}
+              {marketingSubTab === "overview" && (
+                <div className="space-y-4">
+                  {/* Campaign Rankings Grid */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Campaign Rankings & Sales Impact</h3>
+                      <p className="text-xs text-slate-500">Live ROI tracking and attribution metrics across franchise promotional campaigns</p>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                            <th className="py-3 px-4">Campaign Name</th>
+                            <th className="py-3 px-4">Channel</th>
+                            <th className="py-3 px-4">Budget</th>
+                            <th className="py-3 px-4">Revenue</th>
+                            <th className="py-3 px-4">ROAS</th>
+                            <th className="py-3 px-4">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {campaigns.map((camp) => {
+                            const rep = camp.roi_reports[0] || { attributed_revenue: 0, efficiency_ratio: 0 };
+                            const roas = rep.efficiency_ratio;
+                            let statusBadge = "bg-slate-100 text-slate-600";
+                            if (camp.status === "Active") statusBadge = "bg-blue-100 text-blue-800 animate-pulse";
+                            else if (camp.status === "Completed") statusBadge = "bg-emerald-100 text-emerald-800";
+                            else if (camp.status === "Draft") statusBadge = "bg-amber-100 text-amber-800";
+
+                            return (
+                              <tr key={camp.id} className="hover:bg-slate-50/50">
+                                <td className="py-3 px-4 font-bold text-slate-800">{camp.name}</td>
+                                <td className="py-3 px-4 text-slate-600">{camp.channel}</td>
+                                <td className="py-3 px-4 font-semibold text-slate-700">₹{camp.budget.toLocaleString('en-IN')}</td>
+                                <td className="py-3 px-4 font-semibold text-emerald-600">₹{rep.attributed_revenue.toLocaleString('en-IN')}</td>
+                                <td className={`py-3 px-4 font-bold ${roas >= 2.0 ? "text-emerald-600" : roas >= 1.0 ? "text-indigo-600" : "text-rose-600"}`}>
+                                  {roas > 0 ? `${roas}x` : "-"}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
+                                    {camp.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Trend chart */}
+                  {campaigns.length > 0 && (
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                      <h3 className="text-base font-bold text-slate-900">Campaign Conversions Performance Trends</h3>
+                      <p className="text-xs text-slate-500">Active click-throughs and customer conversions tracked across promotional activities</p>
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={campaigns.flatMap(c => c.marketing_metrics || []).slice(0, 30)}
+                            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="colorConvs" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="recorded_date" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <Tooltip formatter={(value: any) => [Number(value).toLocaleString(), '']} />
+                            <Area type="monotone" dataKey="clicks" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorClicks)" name="Clicks" />
+                            <Area type="monotone" dataKey="pos_sales_conversions" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorConvs)" name="Conversions" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {marketingLoading && (
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-slate-600 text-sm font-medium">
-                    Loading marketing analytics...
+              {/* 2. POWERBI EMBEDDED VISUALIZATION */}
+              {marketingSubTab === "powerbi" && (
+                <div className="bg-slate-900 text-slate-100 rounded-2xl border border-slate-700/60 shadow-lg overflow-hidden flex flex-col h-[520px]">
+                  {/* Mock PowerBI Toolbar */}
+                  <div className="bg-slate-800/80 px-4 py-2 border-b border-slate-700/60 flex items-center justify-between text-xs font-semibold">
+                    <div className="flex items-center space-x-3">
+                      <span className="bg-yellow-500 text-slate-950 font-black px-1.5 py-0.5 rounded text-[10px] tracking-wider uppercase shadow-xs">Power BI</span>
+                      <span className="text-slate-300">Marketing ROI Analysis - Embedded Dashboard</span>
+                    </div>
+                    <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🔄</span> <span>Refresh</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖨️</span> <span>Print</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖥️</span> <span>Full Screen</span></button>
+                    </div>
                   </div>
-                )}
 
-                {marketingError && (
-                  <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-700 text-sm font-medium">
-                    {marketingError}
+                  <div className="flex-1 grid grid-cols-12 overflow-hidden bg-slate-950 p-4 gap-4">
+                    {/* Filters Pane */}
+                    <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-4 text-xs overflow-y-auto">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1.5">Filters</div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Campaign Status</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Statuses</option>
+                          <option>Active</option>
+                          <option>Completed</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Marketing Channel</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Channels</option>
+                          <option>Social Media</option>
+                          <option>POS Coupons</option>
+                          <option>CRM System Data</option>
+                        </select>
+                      </div>
+                      <div className="pt-2 border-t border-slate-800 space-y-2">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dashboard KPI Metrics</div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Top Channel</span>
+                          <span className="font-black text-amber-500 text-sm mt-0.5 block">POS Coupons</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Acquisition Efficiency</span>
+                          <span className="font-black text-emerald-500 text-sm mt-0.5 block">1.82x Net Lift</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Report Canvas */}
+                    <div className="col-span-9 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-100">Attribution Revenue by Marketing Channel</h4>
+                          <p className="text-[10px] text-slate-500">Cross-channel efficiency comparison and budget mapping</p>
+                        </div>
+                        <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">Status: Live Sync</span>
+                      </div>
+
+                      {/* Mock Chart Area */}
+                      <div className="flex-1 min-h-[220px]">
+                        {campaigns.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={campaigns.map(c => {
+                                const rep = c.roi_reports[0] || { total_spend: c.budget, attributed_revenue: 0 };
+                                return {
+                                  name: c.name.slice(0, 14) + "..",
+                                  Spend: rep.total_spend,
+                                  Revenue: rep.attributed_revenue
+                                };
+                              })}
+                              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff' }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar dataKey="Spend" fill="#6366f1" name="Budget Spend" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="Revenue" fill="#10b981" name="Attributed Revenue" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-slate-500 text-xs">No active campaign data loaded.</div>
+                        )}
+                      </div>
+
+                      {/* Mini cards */}
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Total Interactions</span>
+                          <span className="text-base font-black text-slate-100 mt-1 block">42,500</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Sentiment Score</span>
+                          <span className="text-base font-black text-emerald-400 mt-1 block">78.5% Positive</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Target Conversion Rate</span>
+                          <span className="text-base font-black text-indigo-400 mt-1 block">22.4%</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {!marketingLoading && !marketingError && marketingMetrics && (
-                  <div className="space-y-5">
-                    {marketingSubTab === 'summary' && (
-                      <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500">Baseline Revenue</div>
-                          <div className="text-2xl font-black text-slate-900 mt-2">₹{marketingMetrics.revenueBefore.toLocaleString('en-IN')}</div>
+              {/* 3. AI MARKETING ENGINE */}
+              {marketingSubTab === "ai" && (
+                <div className="space-y-6">
+                  {/* Segmentation and Predictor Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Segmentation Results */}
+                    {aiSegments && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">K-Means Customer Segmentation</h3>
+                          <p className="text-xs text-slate-500">Clustering based on total spend, visit frequency, and customer age profile</p>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500">Campaign Revenue</div>
-                          <div className="text-2xl font-black text-emerald-600 mt-2">₹{marketingMetrics.revenueDuring.toLocaleString('en-IN')}</div>
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500">Incremental Lift</div>
-                          <div className="text-2xl font-black text-indigo-700 mt-2">₹{marketingMetrics.incrementalRevenue.toLocaleString('en-IN')}</div>
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500">Campaign Cost</div>
-                          <div className="text-2xl font-black text-rose-600 mt-2">₹{marketingMetrics.cost.toLocaleString('en-IN')}</div>
-                        </div>
-                      </div>
-                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                        <div className="border-b border-slate-100 px-5 py-4">
-                          <h3 className="text-base font-bold text-slate-900">Campaign Rankings &amp; Sales Impact</h3>
-                          <p className="mt-1 text-xs text-slate-500">Track attributed revenue and return on ad spend across promotional campaigns.</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-190 text-left text-sm">
-                            <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
-                              <tr><th className="px-5 py-3">Campaign name</th><th className="px-4 py-3">Channel</th><th className="px-4 py-3 text-right">Budget</th><th className="px-4 py-3 text-right">Revenue</th><th className="px-4 py-3 text-right">ROAS</th><th className="px-5 py-3">Status</th></tr>
-                            </thead>
-                            <tbody>
-                              {campaignRankingData.map((campaign) => (
-                                <tr key={campaign.id} className={`border-t border-slate-100 ${String(campaign.id) === selectedCampaignId ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
-                                  <td className="px-5 py-4 font-bold text-slate-900">{campaign.name}</td>
-                                  <td className="px-4 py-4 capitalize text-slate-600">{campaign.channel}</td>
-                                  <td className="px-4 py-4 text-right font-medium text-slate-700">₹{campaign.budget.toLocaleString("en-IN")}</td>
-                                  <td className="px-4 py-4 text-right font-bold text-emerald-600">₹{campaign.attributedRevenue.toLocaleString("en-IN")}</td>
-                                  <td className="px-4 py-4 text-right font-bold text-indigo-700">{campaign.roas === null ? "—" : `${campaign.roas.toFixed(2)}x`}</td>
-                                  <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${campaign.status === "Excellent" ? "bg-emerald-100 text-emerald-700" : campaign.status === "Strong" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"}`}>{campaign.status}</span></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                      <div className="grid gap-4 lg:grid-cols-5"><div className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Revenue impact</h3><div className="mt-4 h-60"><ResponsiveContainer width="100%" height="100%"><BarChart data={marketingChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" /><YAxis /><Tooltip formatter={(value) => `?${Number(value ?? 0).toLocaleString('en-IN')}`} /><Legend /><Bar dataKey="revenue" name="Revenue" fill="#4f46e5" /><Bar dataKey="cost" name="Cost" fill="#fb7185" /></BarChart></ResponsiveContainer></div></div><div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5"><h3 className="text-sm font-bold text-slate-900">Campaign details</h3><table className="mt-3 w-full text-sm"><tbody><tr className="border-b border-slate-200"><td className="py-3 text-slate-500">Period</td><td className="py-3 text-right font-semibold">{marketingMetrics.period.start} ? {marketingMetrics.period.end}</td></tr><tr className="border-b border-slate-200"><td className="py-3 text-slate-500">Revenue lift</td><td className="py-3 text-right font-semibold text-emerald-700">{marketingMetrics.upliftPercent?.toFixed(1) ?? '0.0'}%</td></tr><tr><td className="py-3 text-slate-500">Active channels</td><td className="py-3 text-right font-semibold">{optimizationChannels.length}</td></tr></tbody></table><button onClick={() => setMarketingSubTab('channels')} className="mt-4 w-full rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white">Optimize channels</button></div></div></div>
-                    )}
 
-                    {marketingSubTab === 'roi' && (
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                          <h3 className="text-sm font-bold text-slate-900">ROI Efficiency</h3>
-                          <div className="mt-4 space-y-3 text-sm text-slate-700">
-                            <div className="flex items-center justify-between">
-                              <span>Return on Investment</span>
-                              <span className="font-semibold text-slate-900">{marketingMetrics.roi !== null ? `${(marketingMetrics.roi * 100).toFixed(1)}%` : "N/A"}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Uplift vs baseline</span>
-                              <span className="font-semibold text-slate-900">{marketingMetrics.upliftPercent !== null ? `${marketingMetrics.upliftPercent.toFixed(1)}%` : "N/A"}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Period</span>
-                              <span className="font-semibold text-slate-900">{marketingMetrics.period.start} → {marketingMetrics.period.end}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                          <h3 className="text-sm font-bold text-slate-900">Spend Efficiency</h3>
-                          <div className="mt-4 space-y-3 text-sm text-slate-700">
-                            <div className="flex items-center justify-between">
-                              <span>Cost per ₹1 incremental</span>
-                              <span className="font-semibold text-slate-900">{marketingMetrics.roi !== null ? `?${Math.max(0, marketingMetrics.cost / Math.max(1, marketingMetrics.incrementalRevenue)).toFixed(2)}` : "N/A"}</span>
-                            </div>
-                            <div className="text-xs text-slate-500">This helps identify whether the campaign is generating enough lift for the budget spent.</div>
-                          </div>
-                        </div>
-                      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm sm:col-span-2"><h3 className="text-sm font-bold text-slate-900">Efficiency comparison</h3><div className="mt-4 h-56"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={[{ metric: 'ROI', value: (marketingMetrics.roi || 0) * 100 }, { metric: 'Uplift', value: marketingMetrics.upliftPercent || 0 }, { metric: 'Net return', value: Math.max(0, ((marketingMetrics.incrementalRevenue - marketingMetrics.cost) / Math.max(1, marketingMetrics.revenueDuring)) * 100) }]}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" unit="%" /><YAxis type="category" dataKey="metric" width={90} /><Tooltip formatter={(value) => `${Number(value ?? 0).toFixed(1)}%`} /><Bar dataKey="value" fill="#10b981" radius={[0,6,6,0]} /></BarChart></ResponsiveContainer></div></div></div>
-                    )}
+                        <div className="grid grid-cols-3 gap-2">
+                          {Object.keys(aiSegments.stats || {}).map((segKey) => {
+                            const stat = aiSegments.stats[segKey];
+                            let cardColor = "border-slate-100 bg-slate-50/50";
+                            let textColor = "text-slate-900";
+                            if (segKey === "High-Value") { cardColor = "border-emerald-200 bg-emerald-50/20"; textColor = "text-emerald-700"; }
+                            else if (segKey === "Churn-Risk") { cardColor = "border-rose-200 bg-rose-50/20"; textColor = "text-rose-700"; }
 
-                    {marketingSubTab === 'channels' && (
-                      <div className="space-y-4">
-                        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold text-slate-900">Channel Optimization</span>
-                            <div className="flex gap-2"><select value={channelToAdd} onChange={(e) => setChannelToAdd(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs"><option value="youtube">YouTube</option><option value="whatsapp">WhatsApp</option><option value="linkedin">LinkedIn</option><option value="google">Google Search</option><option value="sms">SMS</option></select><button onClick={() => { if (!optimizationChannels.includes(channelToAdd)) { setOptimizationChannels((previous) => [...previous, channelToAdd]); setChannelBudgets((previous) => ({ ...previous, [channelToAdd]: 10 })); } }} className="rounded-xl bg-indigo-600 px-3 py-1 text-xs font-bold text-white">Add channel</button></div>
-                          </div>
-                          <div className="mt-4 overflow-x-auto"><table className="w-full min-w-150 text-left text-sm"><thead className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Channel</th><th className="pb-3">ROI score</th><th className="pb-3">Budget allocation</th><th className="pb-3">Projected leads</th><th className="pb-3">Action</th></tr></thead><tbody>{channelPerformanceData.map((item) => <tr key={item.channel} className="border-b border-slate-100"><td className="py-3 font-bold capitalize text-slate-900">{item.channel}</td><td className="py-3"><span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{item.score}/100</span></td><td className="py-3"><div className="flex items-center gap-2"><input aria-label={`${item.channel} budget`} type="range" min="0" max="50" value={item.budget} onChange={(e) => setChannelBudgets((previous) => ({ ...previous, [item.channel]: Number(e.target.value) }))} className="w-24 accent-indigo-600" /><span className="text-xs font-semibold">{item.budget}%</span></div></td><td className="py-3 font-semibold text-indigo-700">{item.projectedLeads.toLocaleString()}</td><td className="py-3 text-xs text-slate-500">{item.action}</td></tr>)}</tbody></table></div>
+                            return (
+                              <div key={segKey} className={`p-3 rounded-xl border text-center ${cardColor}`}>
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase">{segKey}</span>
+                                <span className={`text-lg font-black mt-1 block ${textColor}`}>{stat.count}</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Spend: ₹{Math.round(stat.average_spend)}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Allocation vs. performance</h3><div className="mt-4 h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={channelPerformanceData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="channel" /><YAxis /><Tooltip /><Legend /><Bar dataKey="score" name="ROI score" fill="#4f46e5" /><Bar dataKey="budget" name="Budget %" fill="#38bdf8" /></BarChart></ResponsiveContainer></div></div>
-                      </div>
-                    )}
 
-                    {marketingSubTab === 'social' && (
-                      <div className="grid gap-4 xl:grid-cols-5">
-                        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <h3 className="text-sm font-bold text-slate-900">Social media connections</h3>
-                              <p className="mt-1 text-xs text-slate-500">Connect channels to include them in campaign publishing.</p>
-                            </div>
-                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{socialConnections.filter((item) => item.connected).length} active</span>
+                        {/* Mini listing */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden text-[11px]">
+                          <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 font-bold text-slate-600 flex justify-between">
+                            <span>Sample Customer Name</span>
+                            <span>Engagement Segment</span>
                           </div>
-                          <div className="mt-4 space-y-3">
-                            {socialConnections.map((connection) => (
-                              <div key={connection.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${connection.color} text-xs font-black text-white`}>
-                                  {connection.name.slice(0, 1)}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-bold text-slate-900">{connection.name}</div>
-                                  <div className="truncate text-[11px] text-slate-500">{connection.connected ? connection.handle : 'Not connected'}{connection.followers ? ` ? ${connection.followers.toLocaleString()} followers` : ''}</div>
-                                </div>
-                                <button onClick={() => handleSocialConnection(connection.id, !connection.connected)} className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${connection.connected ? 'bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                  {connection.connected ? 'Disconnect' : 'Connect'}
-                                </button>
+                          <div className="divide-y divide-slate-50 max-h-32 overflow-y-auto">
+                            {aiSegments.customers?.slice(0, 5).map((cust: any, idx: number) => (
+                              <div key={idx} className="px-3 py-2 flex justify-between hover:bg-slate-50/30">
+                                <span className="text-slate-800 font-semibold">{cust.name}</span>
+                                <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
+                                  cust.segment === 'High-Value' ? "bg-emerald-100 text-emerald-800" : cust.segment === 'Churn-Risk' ? "bg-rose-100 text-rose-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {cust.segment}
+                                </span>
                               </div>
                             ))}
                           </div>
                         </div>
-
-                        <div className="xl:col-span-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5 shadow-sm">
-                          <h3 className="text-sm font-bold text-slate-900">Create campaign post</h3>
-                          <p className="mt-1 text-xs text-slate-500">Publish now or schedule a promotion for connected social channels.</p>
-                          <textarea value={socialDraft} onChange={(e) => setSocialDraft(e.target.value)} maxLength={280} placeholder="Example: Weekend offer is live — visit your nearest outlet for 20% off today!" className="mt-4 min-h-28 w-full resize-y rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500" />
-                          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500"><span>Keep it clear, local, and action-oriented.</span><span>{socialDraft.length}/280</span></div>
-                          <div className="mt-4">
-                            <span className="text-xs font-semibold text-slate-600">Publish to</span>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {socialConnections.filter((item) => item.connected).map((connection) => {
-                                const selected = socialChannels.includes(connection.id);
-                                return <button key={connection.id} onClick={() => setSocialChannels((previous) => selected ? previous.filter((item) => item !== connection.id) : [...previous, connection.id])} className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${selected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}>{connection.name}</button>;
-                              })}
-                            </div>
-                          </div>
-                          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-                            <div className="flex-1"><label className="block text-xs font-semibold text-slate-600">Schedule for <span className="font-normal text-slate-400">(optional)</span></label><input type="datetime-local" value={socialSchedule} onChange={(e) => setSocialSchedule(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900" /></div>
-                            <button disabled={socialSaving || !socialDraft.trim() || socialChannels.length === 0} onClick={handleSocialPost} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{socialSaving ? 'Saving...' : socialSchedule ? 'Schedule post' : 'Publish now'}</button>
-                          </div>
-                          {!socialDraft.trim() && <p className="mt-2 text-xs font-medium text-amber-700">Write a post message above to enable scheduling.</p>}
-                          {socialDraft.trim() && socialChannels.length === 0 && <p className="mt-2 text-xs font-medium text-amber-700">Choose at least one connected channel to schedule this post.</p>}
-                          {socialMessage && <div className="mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm font-medium text-emerald-800">{socialMessage}</div>}
-                        </div>
                       </div>
                     )}
 
-                    {marketingSubTab === 'ai' && (
-                      <div className="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
-                        <h3 className="text-xl font-bold text-slate-900">Campaign Success Predictor</h3>
-                        <p className="mt-1 text-sm leading-5 text-slate-500">Evaluate prospective campaign efficiency and impressions prior to launching.</p>
-                        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                          <label className="block text-sm font-bold text-slate-700">Marketing Channel
-                            <select value={predictionChannel} onChange={(e) => setPredictionChannel(e.target.value)} className="mt-1.5 h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-violet-500">
-                              <option>Social Media</option><option>Search Ads</option><option>Email</option><option>SMS</option><option>Influencer</option>
-                            </select>
-                          </label>
-                          <label className="block text-sm font-bold text-slate-700">Target Audience Budget (Rs.)
-                            <input type="number" min="1" value={predictionBudget} onChange={(e) => setPredictionBudget(e.target.value)} className="mt-1.5 h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500" />
-                          </label>
-                        </div>
-                        <button onClick={handleCampaignPrediction} disabled={predictionLoading} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-violet-300">
-                          <span aria-hidden="true">⌕</span>{predictionLoading ? "Running prediction..." : "Run Prediction Algorithm"}
-                        </button>
-                        {predictionError && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm font-medium text-rose-700">{predictionError}</p>}
-                        <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-5 py-7 text-center">
-                          {campaignPrediction ? <div className="space-y-3"><div className="text-xs font-bold uppercase tracking-wider text-violet-600">Prediction complete</div><div className="text-2xl font-black text-slate-900">{campaignPrediction.score}% success likelihood</div><p className="text-sm font-medium text-slate-600">{campaignPrediction.predictedOutcome}</p><div className="grid gap-2 pt-1 text-left text-xs text-slate-600">{campaignPrediction.reasons?.slice(0, 2).map((reason: string) => <p key={reason} className="rounded-lg bg-white p-3">{reason}</p>)}</div></div> : <p className="text-sm leading-5 text-slate-400">Select inputs above to evaluate simulated campaign ROI.</p>}
-                        </div>
+                    {/* Campaign Performance Predictor */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Campaign Success Predictor</h3>
+                        <p className="text-xs text-slate-500">Evaluate prospective campaign efficiency and impressions prior to launching</p>
                       </div>
-                    )}
 
-                    {false && (
-                      <div className="space-y-4">
-                        <div className="rounded-2xl border border-violet-200 bg-linear-to-br from-violet-600 to-indigo-700 p-6 text-white shadow-sm">
-                          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                            <div>
-                              <div className="text-xs font-bold uppercase tracking-widest text-violet-200">AI Marketing Engine</div>
-                              <h3 className="mt-2 text-2xl font-black">{aiMarketingInsight.health} campaign outlook</h3>
-                              <p className="mt-2 max-w-2xl text-sm leading-6 text-violet-100">{aiMarketingInsight.action}</p>
-                            </div>
-                            <div className="rounded-2xl bg-white/15 px-4 py-3 text-center backdrop-blur-sm">
-                              <div className="text-[10px] font-bold uppercase tracking-wider text-violet-200">Model confidence</div>
-                              <div className="mt-1 text-2xl font-black">{aiMarketingInsight.confidence}%</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-3">
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Predicted ROI</div><div className="mt-2 text-3xl font-black text-emerald-600">{aiMarketingInsight.roiPercent.toFixed(1)}%</div><p className="mt-2 text-xs text-slate-500">Based on attributed campaign revenue and spend.</p></div>
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recommended budget</div><div className="mt-2 text-3xl font-black text-indigo-600">{aiMarketingInsight.budgetChange}</div><p className="mt-2 text-xs text-slate-500">Apply the adjustment over the next reporting cycle.</p></div>
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Expected uplift</div><div className="mt-2 text-3xl font-black text-violet-600">{aiMarketingInsight.uplift.toFixed(1)}%</div><p className="mt-2 text-xs text-slate-500">Lift against the comparable pre-campaign period.</p></div>
-                        </div>
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Recommended next actions</h3><ol className="mt-4 space-y-3 text-sm text-slate-700"><li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">1</span><span>Prioritize the channels with the highest conversion intent before increasing reach.</span></li><li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">2</span><span>Run a creative A/B test and keep the highest-performing message as the control.</span></li><li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">3</span><span>Review ROAS after seven days before applying the next budget change.</span></li></ol></div>
-                          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Portfolio opportunity</h3><p className="mt-2 text-sm text-slate-600">Top ranked campaign</p><div className="mt-1 text-xl font-black text-indigo-700">{aiMarketingInsight.topCampaign?.name ?? "No campaign data"}</div><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-xl bg-white p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">ROAS</div><div className="mt-1 font-black text-slate-900">{aiMarketingInsight.topCampaign?.roas?.toFixed(2) ?? "—"}x</div></div><div className="rounded-xl bg-white p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">Revenue</div><div className="mt-1 font-black text-emerald-600">₹{(aiMarketingInsight.topCampaign?.attributedRevenue ?? 0).toLocaleString("en-IN")}</div></div></div></div>
-                        </div>
-                      </div>
-                    )}
-
-                    {marketingSubTab === 'budget' && (
-                      <div className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 className="text-sm font-bold text-slate-900">Budget Direction</h3>
-                            <div className="mt-4 text-sm text-slate-700 space-y-3">
-                              <div>
-                                <div className="font-semibold text-slate-900">Current recommendation</div>
-                                <div>{marketingMetrics.roi !== null && marketingMetrics.roi > 0.5 ? "Increase media budget by 20%" : marketingMetrics.roi !== null && marketingMetrics.roi >= 0 ? "Refocus spend on creative testing" : "Pause underperforming channels"}</div>
-                              </div>
-                              <div>
-                                <div className="font-semibold text-slate-900">Margin guardrail</div>
-                                <div>{marketingMetrics.roi !== null ? `ROI threshold: ${(marketingMetrics.roi * 100).toFixed(1)}%` : "N/A"}</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
-                            <h3 className="text-sm font-bold text-slate-900">ROI health</h3>
-                            <div className="mt-4 text-2xl font-black text-slate-900">{marketingMetrics.roi !== null ? `${(marketingMetrics.roi * 100).toFixed(1)}%` : "N/A"}</div>
-                            <div className="text-xs text-slate-500 mt-1">This is your campaign return relative to cost.</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {marketingSubTab === 'signals' && (
-                      <div className="space-y-4">
-                        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                          <h3 className="text-sm font-bold text-slate-900">Performance Signals</h3>
-                          <div className="mt-4 space-y-3 text-sm text-slate-700">
-                            <div>
-                              <span className="font-semibold text-slate-900">Incremental trend</span>
-                              <div>{marketingMetrics.incrementalRevenue > 0 ? "Positive growth" : "Needs optimization"}</div>
-                            </div>
-                            <div>
-                              <span className="font-semibold text-slate-900">Baseline stability</span>
-                              <div>{marketingMetrics.upliftPercent !== null ? `${marketingMetrics.upliftPercent.toFixed(1)}% uplift vs baseline` : "No baseline"}</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-sm text-slate-700">
-                          <div className="grid gap-4 lg:grid-cols-2"><div><span className="font-bold text-slate-900">AI recommendation</span><p className="mt-1">Use day-part analysis and promotions that align with high traffic windows to maximize incremental lift.</p></div><div className="h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={marketingChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(value) => `?${Number(value ?? 0).toLocaleString('en-IN')}`} /><Line type="monotone" dataKey="revenue" name="Revenue signal" stroke="#4f46e5" strokeWidth={3} dot={{ r: 5 }} /></LineChart></ResponsiveContainer></div></div>
-                        </div>
-                      </div>
-                    )}
-
-                    {marketingSubTab === 'actions' && (
-                      <div className="space-y-4">
-                        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                          <h3 className="text-sm font-bold text-slate-900">Next Step Recommendations</h3>
-                          <ul className="mt-4 space-y-3 text-sm text-slate-700">
-                            {marketingRecommendations.length > 0 ? (
-                              marketingRecommendations.map((item, idx) => (
-                                <li key={idx} className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                                  <span className="text-slate-900 font-semibold">{idx + 1}.</span> {item}
-                                </li>
-                              ))
-                            ) : (
-                              <li className="rounded-2xl bg-slate-50 border border-slate-200 p-3 text-slate-500">No recommendations available yet.</li>
-                            )}
-                          </ul>
-                        </div>
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm">
-                            <h3 className="text-sm font-bold text-emerald-900">Schedule Campaign Report</h3>
-                            <div className="mt-3 space-y-3 text-sm text-slate-700">
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-500">Frequency</label>
-                                <select
-                                  value={scheduleFrequency}
-                                  onChange={(e) => setScheduleFrequency(e.target.value)}
-                                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                                >
-                                  <option value="daily">Daily</option>
-                                  <option value="weekly">Weekly</option>
-                                  <option value="biweekly">Bi-weekly</option>
-                                  <option value="monthly">Monthly</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-semibold text-slate-500">Next run date</label>
-                                <input
-                                  type="date"
-                                  value={scheduleNextRun}
-                                  onChange={(e) => setScheduleNextRun(e.target.value)}
-                                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                                />
-                              </div>
-                              <button
-                                onClick={handleScheduleReport}
-                                className="w-full rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
-                              >
-                                Schedule Report
-                              </button>
-                              {scheduleMessage && (
-                                <div className="rounded-2xl bg-white border border-emerald-100 p-3 text-sm text-emerald-900">
-                                  {scheduleMessage}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
-                            <h3 className="text-sm font-bold text-slate-900">Export Campaign CSV</h3>
-                            <p className="mt-2 text-sm text-slate-600">Download a full campaign ROI summary including channel insights and recommendations.</p>
-                            <button
-                              onClick={handleExportReport}
-                              className="mt-4 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                      <form onSubmit={handlePredictCampaign} className="space-y-3.5 text-xs text-slate-700">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Marketing Channel</label>
+                            <select
+                              value={predictChannel}
+                              onChange={(e) => setPredictChannel(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 cursor-pointer text-slate-800"
                             >
-                              Download CSV
-                            </button>
+                              <option value="Social Media">Social Media</option>
+                              <option value="POS Coupons">POS Coupons</option>
+                              <option value="CRM System Data">CRM System Data</option>
+                              <option value="Google Analytics">Google Analytics</option>
+                              <option value="Website Analytics">Website Analytics</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Target Audience Budget (₹)</label>
+                            <input
+                              type="number"
+                              value={predictBudget}
+                              onChange={(e) => setPredictBudget(Number(e.target.value))}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 font-semibold"
+                            />
                           </div>
                         </div>
-                        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-sm text-emerald-900">
-                          Action plan: Review campaign spend, trim low-return channels, and test one new promotional creative each week.
+
+                        <button
+                          type="submit"
+                          disabled={rerunningAi}
+                          className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-lg shadow-sm cursor-pointer hover:bg-indigo-700 transition-all disabled:bg-indigo-400"
+                        >
+                          {rerunningAi ? "Running Regression Predictor..." : "🔍 Run Prediction Algorithm"}
+                        </button>
+                      </form>
+
+                      {/* Prediction Result Display */}
+                      {predictionResult ? (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 grid grid-cols-3 gap-2.5 text-[11px] animate-in fade-in duration-200">
+                          <div className="col-span-3 font-bold text-slate-800 border-b border-slate-200/60 pb-1 flex justify-between">
+                            <span>Predicted Impact ({predictionResult.channel})</span>
+                            <span className="text-indigo-600 uppercase text-[9px] font-black">{predictionResult.effectiveness_tag}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">CONVERSIONS</span>
+                            <span className="font-black text-slate-800 text-sm mt-0.5 block">{predictionResult.predicted_conversions}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST REVENUE</span>
+                            <span className="font-black text-emerald-600 text-sm mt-0.5 block">₹{Math.round(predictionResult.attributed_revenue).toLocaleString('en-IN')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST ROAS</span>
+                            <span className="font-black text-indigo-600 text-sm mt-0.5 block">{predictionResult.roas}x</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center text-slate-400 text-xs py-6">
+                          Select inputs above to evaluate simulated campaign ROI.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sentiment and Forecasting Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Sentiment NLP */}
+                    {aiSentiment && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Social Media Feedback Sentiment (NLP)</h3>
+                          <p className="text-xs text-slate-500">Live NLP sentiment classification of customer comments and store mentions</p>
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-center w-24">
+                            <span className="text-[10px] text-slate-500 block font-bold">INDEX</span>
+                            <span className="font-black text-slate-800 text-xl mt-1 block">{Math.round(aiSentiment.average_sentiment_score * 100)}%</span>
+                          </div>
+
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-slate-500">Feedback Distribution</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                              <div className="bg-emerald-500" style={{ width: `${(aiSentiment.sentiment_distribution.Positive / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-slate-300" style={{ width: `${(aiSentiment.sentiment_distribution.Neutral / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-rose-500" style={{ width: `${(aiSentiment.sentiment_distribution.Negative / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold">
+                              <span className="text-emerald-600 flex items-center">● Pos ({aiSentiment.sentiment_distribution.Positive})</span>
+                              <span className="text-slate-500 flex items-center">● Neu ({aiSentiment.sentiment_distribution.Neutral})</span>
+                              <span className="text-rose-600 flex items-center">● Neg ({aiSentiment.sentiment_distribution.Negative})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Comments listing */}
+                        <div className="divide-y divide-slate-50 border border-slate-100 rounded-xl max-h-32 overflow-y-auto text-[10px]">
+                          {aiSentiment.comments?.map((comment: any, idx: number) => (
+                            <div key={idx} className="p-2 flex justify-between hover:bg-slate-50/50">
+                              <span className="text-slate-700 truncate max-w-sm font-semibold">"{comment.text}"</span>
+                              <span className={`font-bold px-1 py-0.5 rounded text-[8px] tracking-wider ${
+                                comment.sentiment === 'Positive' ? "bg-emerald-100 text-emerald-800" : comment.sentiment === 'Negative' ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-800"
+                              }`}>
+                                {comment.sentiment}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Time Series Forecasting */}
+                    {aiForecast.length > 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Revenue & Engagement 14-Day Forecast</h3>
+                          <p className="text-xs text-slate-500">ML Random Forest trend projection for marketing-attributed revenue volume</p>
+                        </div>
+
+                        <div className="h-48 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={aiForecast} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                              <XAxis dataKey="date" tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <YAxis tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <Tooltip formatter={(value: any) => [`₹${Number(value).toLocaleString()}`, '']} />
+                              <Line type="monotone" dataKey="predicted_revenue" stroke="#7c3aed" strokeWidth={2.5} name="Forecast Revenue" dot={{ r: 2 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
                         </div>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* 4. AI RECOMMENDATIONS PANEL */}
+              {marketingSubTab === "recommendations" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">AI-Generated Campaign Optimization Board</h3>
+                      <p className="text-xs text-slate-500">Real-time budget reallocation advice and targeted audience refinements</p>
+                    </div>
+                    <span className="text-[10px] text-rose-500 bg-rose-50 border border-rose-100 font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Action Required</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {aiRecommendations.map((rec) => {
+                      const isHigh = rec.priority === "High";
+                      const isApplying = applyingRecId === rec.id;
+
+                      return (
+                        <div
+                          key={rec.id}
+                          className={`bg-white rounded-2xl border p-5 space-y-4 shadow-sm flex flex-col justify-between transition-all duration-150 ${
+                            isHigh ? "border-rose-200 bg-rose-50/5" : "border-slate-200"
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                isHigh ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {rec.priority} Priority
+                              </span>
+                              <span className="text-[10px] font-mono text-emerald-600 font-bold">{rec.estimated_roi_impact}</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{rec.type}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{rec.description}</p>
+                          </div>
+
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyRecommendation(rec)}
+                              disabled={isApplying}
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs shadow-xs cursor-pointer transition-all flex items-center justify-center space-x-1 disabled:bg-slate-600"
+                            >
+                              {isApplying ? (
+                                <>
+                                  <span className="animate-spin text-xs">🌀</span>
+                                  <span>Applying Adjustments...</span>
+                                </>
+                              ) : (
+                                <span>Apply Optimization Suggestion</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* OTHER STEPS (1, 2, 7, 8, 9, 10) Rendering within section */}
-          {![3, 4, 5, 6].includes(activeStepId) && (
+          {/* STEP 7: AUDIT AGENT */}
+          {activeStepId === 7 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+
+              {/* Sub-tab Navigation */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                {([
+                  { key: "sessions",   label: "📋 Audit Sessions" },
+                  { key: "checklist",  label: "✅ SOP Checklist" },
+                  { key: "inventory",  label: "📦 Inventory Variance" },
+                  { key: "pos",        label: "💳 POS Discrepancies" },
+                  { key: "shifts",     label: "👤 Shift Verification" },
+                  { key: "incidents",  label: "🔧 Facility Incidents" },
+                  { key: "anomalies",  label: "⚠️ Anomaly Flags" },
+                  { key: "report",     label: "📊 Audit Report" },
+                ] as const).map((tab) => (
+                  <button
+                    key={tab.key}
+                    id={`audit-tab-${tab.key}`}
+                    onClick={() => setAuditSubTab(tab.key)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                      auditSubTab === tab.key
+                        ? tab.key === "anomalies"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* KPI Summary Cards */}
+              {!auditLoading && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    {
+                      label: "Network Compliance",
+                      value: auditSessions.length > 0
+                        ? `${Math.round(auditSessions.filter(s => s.overallScore > 0).reduce((acc, s) => acc + s.overallScore, 0) / Math.max(auditSessions.filter(s => s.overallScore > 0).length, 1))}%`
+                        : "—",
+                      sub: "Avg. across completed sessions",
+                      color: "text-indigo-600",
+                    },
+                    {
+                      label: "Passed / Failed",
+                      value: `${auditSessions.filter(s => s.passFail === "Pass").length} / ${auditSessions.filter(s => s.passFail === "Fail").length}`,
+                      sub: `${auditSessions.filter(s => s.status === "Escalated").length} escalated`,
+                      color: "text-emerald-600",
+                    },
+                    {
+                      label: "Critical Anomalies",
+                      value: auditAnomalies?.summary?.critical ?? "—",
+                      sub: `${auditAnomalies?.summary?.total ?? 0} total flags`,
+                      color: "text-rose-600",
+                    },
+                    {
+                      label: "Open Incidents",
+                      value: auditIncidents?.summary?.open ?? "—",
+                      sub: `${auditIncidents?.summary?.critical ?? 0} critical priority`,
+                      color: "text-amber-600",
+                    },
+                  ].map((kpi, i) => (
+                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{kpi.label}</span>
+                      <span className={`text-2xl font-black mt-1 block ${kpi.color}`}>{kpi.value}</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block">{kpi.sub}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {auditLoading && (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-400 text-sm">
+                  Loading audit data...
+                </div>
+              )}
+
+              {/* ── 1. AUDIT SESSIONS ─────────────────────────────── */}
+              {auditSubTab === "sessions" && !auditLoading && (
+                <div className="space-y-4">
+                  {/* Create new session form */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-3">🆕 Start New Audit Session</h3>
+                    <form onSubmit={handleCreateAuditSession} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Outlet</label>
+                        <select
+                          value={newAuditForm.outletId}
+                          onChange={e => setNewAuditForm(f => ({ ...f, outletId: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 cursor-pointer"
+                        >
+                          <option value="">Select Outlet...</option>
+                          {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name} — {o.city}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Auditor Name</label>
+                        <input
+                          type="text"
+                          placeholder="Full name + role"
+                          value={newAuditForm.auditorName}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditorName: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Audit Date</label>
+                        <input
+                          type="date"
+                          value={newAuditForm.auditDate}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditDate: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="submit"
+                          disabled={creatingAudit}
+                          id="btn-create-audit-session"
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl cursor-pointer transition-all disabled:bg-indigo-400"
+                        >
+                          {creatingAudit ? "Creating..." : "➕ Start Audit"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Sessions table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">All Audit Sessions</h3>
+                      <span className="text-[10px] text-slate-400 font-mono">{auditSessions.length} total sessions</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-left">Auditor</th>
+                            <th className="px-4 py-2.5 text-left">Date</th>
+                            <th className="px-4 py-2.5 text-center">Score</th>
+                            <th className="px-4 py-2.5 text-center">Result</th>
+                            <th className="px-4 py-2.5 text-center">Status</th>
+                            <th className="px-4 py-2.5 text-center">Findings</th>
+                            <th className="px-4 py-2.5 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {auditSessions.map((session: any) => (
+                            <tr key={session.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{session.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{session.city}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 max-w-[140px] truncate">{session.auditorName}</td>
+                              <td className="px-4 py-3 text-slate-600 font-mono">{session.auditDate}</td>
+                              <td className="px-4 py-3 text-center">
+                                {session.overallScore > 0 ? (
+                                  <span className={`font-black text-sm ${session.overallScore >= 80 ? "text-emerald-600" : session.overallScore >= 70 ? "text-amber-600" : "text-rose-600"}`}>
+                                    {session.overallScore.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.passFail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                                  session.passFail === "Fail" ? "bg-rose-100 text-rose-700" :
+                                  "bg-slate-100 text-slate-600"
+                                }`}>
+                                  {session.passFail}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.status === "Completed" ? "bg-blue-100 text-blue-700" :
+                                  session.status === "Escalated" ? "bg-red-100 text-red-700" :
+                                  "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {session.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {session.criticalFindings > 0 ? (
+                                  <span className="text-rose-600 font-bold">{session.criticalFindings} 🔴</span>
+                                ) : (
+                                  <span className="text-slate-400">{session.totalFindings}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  id={`btn-load-session-${session.id}`}
+                                  onClick={() => { handleLoadAuditSession(session.id); setAuditSubTab("checklist"); }}
+                                  className="px-3 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-slate-700 transition-all"
+                                >
+                                  Open →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 2. SOP CHECKLIST ──────────────────────────────── */}
+              {auditSubTab === "checklist" && !auditLoading && (
+                <div className="space-y-4">
+                  {!activeAuditSession ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-8 text-center text-slate-400 text-sm space-y-3">
+                      <div className="text-3xl">📋</div>
+                      <p>No audit session loaded. Select a session from the Sessions tab, or create a new one.</p>
+                      <button onClick={() => setAuditSubTab("sessions")} className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-indigo-700">
+                        Go to Sessions
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Session header */}
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">{activeAuditSession.outletName} — {activeAuditSession.audit_date}</h3>
+                          <p className="text-[10px] text-slate-400">Auditor: {activeAuditSession.auditor_name} · Session #{activeAuditSession.id}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Score breakdown mini cards */}
+                          {[
+                            { label: "Hygiene", val: activeAuditSession.hygiene_score },
+                            { label: "Food Safety", val: activeAuditSession.food_safety_score },
+                            { label: "SOP", val: activeAuditSession.sop_score },
+                          ].map(s => (
+                            <div key={s.label} className="text-center bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 block">{s.label}</span>
+                              <span className={`text-sm font-black ${s.val >= 80 ? "text-emerald-600" : s.val >= 70 ? "text-amber-600" : s.val > 0 ? "text-rose-600" : "text-slate-300"}`}>
+                                {s.val > 0 ? `${s.val}%` : "—"}
+                              </span>
+                            </div>
+                          ))}
+                          <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${
+                            activeAuditSession.pass_fail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                            activeAuditSession.pass_fail === "Fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {activeAuditSession.overall_score > 0 ? `${activeAuditSession.overall_score}/100` : "Pending"}
+                          </span>
+                          {activeAuditSession.status === "In Progress" && (
+                            <button
+                              id={`btn-complete-session-${activeAuditSession.id}`}
+                              onClick={() => handleCompleteAuditSession(activeAuditSession.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-xl cursor-pointer transition-all"
+                            >
+                              ✓ Finalize Audit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Checklist by category */}
+                      {auditSessionLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 text-sm">Loading checklist...</div>
+                      ) : (
+                        ["Hygiene", "Food Safety", "Opening Procedure", "Closing Procedure", "SOP"].map(category => {
+                          const items = activeAuditSession.checklist_items?.filter((i: any) => i.category === category) || [];
+                          const passed = items.filter((i: any) => i.answer === "Pass").length;
+                          const failed = items.filter((i: any) => i.answer === "Fail").length;
+                          return (
+                            <div key={category} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                              <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-slate-700">{category}</h4>
+                                <div className="flex gap-2 text-[10px] font-bold">
+                                  <span className="text-emerald-600">{passed} Pass</span>
+                                  <span className="text-rose-600">{failed} Fail</span>
+                                  <span className="text-slate-400">{items.filter((i:any) => i.answer === "Pending").length} Pending</span>
+                                </div>
+                              </div>
+                              <div className="divide-y divide-slate-50">
+                                {items.map((item: any) => (
+                                  <div key={item.id} className={`px-5 py-3 flex items-center justify-between gap-4 hover:bg-slate-50/50 ${item.answer === "Fail" ? "border-l-4 border-rose-400" : item.answer === "Pass" ? "border-l-4 border-emerald-400" : "border-l-4 border-slate-200"}`}>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-800 font-medium leading-relaxed">{item.question}</p>
+                                      {item.notes && <p className="text-[10px] text-rose-600 mt-0.5 italic">{item.notes}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[9px] text-slate-400 font-bold">Wt:{item.score_weight}</span>
+                                      {(["Pass", "Fail", "N/A"] as const).map(ans => (
+                                        <button
+                                          key={ans}
+                                          id={`checklist-${item.id}-${ans}`}
+                                          disabled={checklistUpdating === item.id || activeAuditSession.status !== "In Progress"}
+                                          onClick={() => handleUpdateChecklistItem(item.id, ans)}
+                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all border ${
+                                            item.answer === ans
+                                              ? ans === "Pass" ? "bg-emerald-500 text-white border-emerald-500"
+                                              : ans === "Fail" ? "bg-rose-500 text-white border-rose-500"
+                                              : "bg-slate-500 text-white border-slate-500"
+                                              : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"
+                                          } disabled:opacity-50`}
+                                        >
+                                          {ans}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 3. INVENTORY VARIANCE ─────────────────────────── */}
+              {auditSubTab === "inventory" && !auditLoading && auditInventoryVariance && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: "Items Audited", value: auditInventoryVariance.summary?.totalItems ?? 0, color: "text-slate-900" },
+                      { label: "Critical Variance", value: auditInventoryVariance.summary?.criticalVariance ?? 0, color: "text-rose-600" },
+                      { label: "High Variance", value: auditInventoryVariance.summary?.highVariance ?? 0, color: "text-amber-600" },
+                      { label: "Within Normal", value: auditInventoryVariance.summary?.normal ?? 0, color: "text-emerald-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">Stock Variance Analysis</h3>
+                      <span className="text-[10px] text-slate-400">Physical stock vs POS-estimated consumption</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Item</th>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-center">Current Stock</th>
+                            <th className="px-4 py-2.5 text-center">Est. Consumption</th>
+                            <th className="px-4 py-2.5 text-center">Theoretical</th>
+                            <th className="px-4 py-2.5 text-center">Variance</th>
+                            <th className="px-4 py-2.5 text-center">Var %</th>
+                            <th className="px-4 py-2.5 text-center">Flag</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(auditInventoryVariance.items || []).slice(0, 20).map((item: any) => (
+                            <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{item.itemName}</div>
+                                <div className="text-[10px] text-slate-400">{item.category}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{item.outletName}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-700">{item.currentStock} {item.unit}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.estimatedConsumption}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.theoreticalRemaining.toFixed(1)}</td>
+                              <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">{item.variance > 0 ? `+${item.variance}` : item.variance}</td>
+                              <td className="px-4 py-3 text-center font-bold">
+                                <span className={item.variancePct > 12 ? "text-rose-600" : item.variancePct > 5 ? "text-amber-600" : "text-emerald-600"}>
+                                  {item.variancePct}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                  item.flagLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                                  item.flagLevel === "High" ? "bg-amber-100 text-amber-700" :
+                                  item.flagLevel === "Medium" ? "bg-blue-100 text-blue-700" :
+                                  "bg-emerald-100 text-emerald-700"
+                                }`}>{item.flagLevel}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 4. POS DISCREPANCIES ──────────────────────────── */}
+              {auditSubTab === "pos" && !auditLoading && auditPosDiscrepancies && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Mismatch (₹)", value: `₹${(auditPosDiscrepancies.summary?.totalMismatch || 0).toLocaleString("en-IN")}`, color: "text-rose-600" },
+                      { label: "Critical Outlets", value: auditPosDiscrepancies.summary?.criticalOutlets ?? 0, color: "text-rose-600" },
+                      { label: "High Risk", value: auditPosDiscrepancies.summary?.highRisk ?? 0, color: "text-amber-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditPosDiscrepancies.discrepancies || []).map((d: any) => (
+                      <div key={d.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${d.riskLevel === "Critical" ? "border-rose-200" : d.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">{d.outletName}</h4>
+                            <p className="text-[10px] text-slate-400">{d.city} · Manager: {d.manager}</p>
+                          </div>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            d.riskLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                            d.riskLevel === "High" ? "bg-amber-100 text-amber-700" :
+                            d.riskLevel === "Medium" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"
+                          }`}>{d.riskLevel}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">MISMATCH</span>
+                            <span className="font-black text-rose-600">₹{d.mismatch.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">CASH RATIO</span>
+                            <span className="font-black text-amber-600">{d.cashRatio}%</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">EST. VOIDS</span>
+                            <span className="font-black text-slate-700">{d.estimatedVoids}</span>
+                          </div>
+                        </div>
+                        {d.overrideFlag && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-800 font-semibold">
+                            ⚠️ {d.overrideFlag}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400 flex gap-4">
+                          <span>Cash: ₹{d.paymentSplit.cash.toLocaleString("en-IN")}</span>
+                          <span>Card: ₹{d.paymentSplit.card.toLocaleString("en-IN")}</span>
+                          <span>UPI: ₹{d.paymentSplit.upi.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 5. SHIFT VERIFICATION ─────────────────────────── */}
+              {auditSubTab === "shifts" && !auditLoading && auditShiftVerification && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Cert Gaps", value: auditShiftVerification.summary?.totalCertGaps ?? 0, color: "text-rose-600" },
+                      { label: "Understaffed Outlets", value: auditShiftVerification.summary?.understaffedOutlets ?? 0, color: "text-amber-600" },
+                      { label: "Missing Managers", value: auditShiftVerification.summary?.missingManagers ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {(auditShiftVerification.outlets || []).map((outlet: any) => (
+                    <div key={outlet.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${outlet.riskLevel === "Critical" ? "border-rose-200" : outlet.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">{outlet.outletName}</h4>
+                          <p className="text-[10px] text-slate-400">{outlet.city} · {outlet.manager}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${outlet.coverageFlag === "Adequate" ? "bg-emerald-100 text-emerald-700" : outlet.coverageFlag === "Borderline" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
+                            {outlet.coverageFlag}
+                          </span>
+                          {!outlet.managerPresent && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">No Manager On-Site</span>
+                          )}
+                          <span className="text-xs font-bold text-slate-600">Attendance: {outlet.attendanceRate}%</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-[11px]">
+                        {[
+                          { label: "Scheduled", val: outlet.scheduled },
+                          { label: "Active", val: outlet.active },
+                          { label: "Morning", val: outlet.shiftBreakdown.morning },
+                          { label: "Evening", val: outlet.shiftBreakdown.evening },
+                        ].map((s, i) => (
+                          <div key={i} className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-[9px] text-slate-400 block font-bold">{s.label}</span>
+                            <span className="font-black text-slate-700 text-base">{s.val}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {outlet.certificationGaps.length > 0 && (
+                        <div className="border border-rose-100 rounded-xl overflow-hidden">
+                          <div className="bg-rose-50 px-3 py-1.5 text-[10px] font-bold text-rose-700 uppercase">Certification Gaps ({outlet.certificationGaps.length})</div>
+                          <div className="divide-y divide-rose-50">
+                            {outlet.certificationGaps.slice(0, 4).map((gap: any) => (
+                              <div key={gap.staffId} className="px-3 py-2 flex justify-between text-[10px]">
+                                <span className="font-semibold text-slate-800">{gap.name} ({gap.role})</span>
+                                <span className="text-rose-600 font-bold">Rating: {gap.rating}/5</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── 6. FACILITY INCIDENTS ─────────────────────────── */}
+              {auditSubTab === "incidents" && !auditLoading && auditIncidents && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { label: "Open", value: auditIncidents.summary?.open ?? 0, color: "text-rose-600" },
+                      { label: "In Progress", value: auditIncidents.summary?.inProgress ?? 0, color: "text-amber-600" },
+                      { label: "Resolved", value: auditIncidents.summary?.resolved ?? 0, color: "text-emerald-600" },
+                      { label: "Critical Priority", value: auditIncidents.summary?.critical ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditIncidents.incidents || []).map((inc: any) => (
+                      <div key={inc.id} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${inc.priority === "Critical" ? "border-rose-200" : inc.priority === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.priority === "Critical" ? "bg-rose-100 text-rose-700" : inc.priority === "High" ? "bg-amber-100 text-amber-700" : inc.priority === "Medium" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                                {inc.priority}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600">{inc.incident_type}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.status === "Resolved" ? "bg-emerald-100 text-emerald-700" : inc.status === "In Progress" ? "bg-blue-100 text-blue-700" : "bg-rose-100 text-rose-700"}`}>
+                                {inc.status}
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{inc.title}</h4>
+                            <p className="text-[10px] text-slate-500 mt-1">{inc.outletName} · {inc.city}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">{inc.description}</p>
+                        {inc.assigned_to && (
+                          <p className="text-[10px] text-slate-400">Assigned: <span className="font-semibold text-slate-600">{inc.assigned_to}</span></p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          {inc.status !== "In Progress" && inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-progress`} onClick={() => handleUpdateIncident(inc.id, "In Progress")} className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-blue-700 transition-all">
+                              Mark In Progress
+                            </button>
+                          )}
+                          {inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-resolve`} onClick={() => handleUpdateIncident(inc.id, "Resolved")} className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-700 transition-all">
+                              ✓ Resolve
+                            </button>
+                          )}
+                          {inc.status === "Resolved" && (
+                            <span className="text-[10px] text-emerald-600 font-bold">✓ Resolved {inc.resolved_date ? `on ${inc.resolved_date}` : ""}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 7. ANOMALY FLAGS ──────────────────────────────── */}
+              {auditSubTab === "anomalies" && !auditLoading && auditAnomalies && (
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-2xl border border-slate-700 p-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">AI Anomaly Detection Engine</h3>
+                      <p className="text-[10px] text-slate-400">Cross-domain risk signals from inventory, POS, staffing, and audit sessions</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">CRITICAL</span>
+                        <span className="text-xl font-black text-rose-400">{auditAnomalies.summary?.critical ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">HIGH</span>
+                        <span className="text-xl font-black text-amber-400">{auditAnomalies.summary?.high ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">TOTAL</span>
+                        <span className="text-xl font-black text-slate-100">{auditAnomalies.summary?.total ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {(auditAnomalies.anomalies || []).map((anomaly: any) => (
+                      <div key={anomaly.id} className={`bg-white rounded-2xl border shadow-xs p-4 ${anomaly.severity === "Critical" ? "border-rose-200" : "border-amber-200"}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`text-xl shrink-0 ${anomaly.severity === "Critical" ? "text-rose-500" : "text-amber-500"}`}>
+                            {anomaly.severity === "Critical" ? "🔴" : "🟡"}
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${anomaly.severity === "Critical" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                                  {anomaly.severity}
+                                </span>
+                                <h4 className="text-xs font-bold text-slate-900">{anomaly.type}</h4>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">{anomaly.timestamp}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed">{anomaly.description}</p>
+                            <div className="bg-slate-50 rounded-xl border border-slate-100 px-3 py-2">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Recommended Action</span>
+                              <p className="text-[10px] text-slate-700 font-semibold">{anomaly.action}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(auditAnomalies.anomalies || []).length === 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-emerald-600 font-bold text-sm">
+                        ✅ No anomalies detected. Franchise network is operating within normal parameters.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 8. AUDIT REPORT ───────────────────────────────── */}
+              {auditSubTab === "report" && !auditLoading && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Network Compliance Audit Report</h3>
+                        <p className="text-xs text-slate-400">Auto-generated from all completed audit sessions · {new Date().toLocaleDateString("en-IN")}</p>
+                      </div>
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">Live Data</span>
+                    </div>
+
+                    {/* Per-outlet grading */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Outlet-Level Compliance Grades</h4>
+                      <div className="border border-slate-100 rounded-xl overflow-hidden text-xs">
+                        <div className="bg-slate-50 px-4 py-2 grid grid-cols-5 font-bold text-slate-500 text-[10px] uppercase tracking-wider">
+                          <span>Outlet</span>
+                          <span className="text-center">Score</span>
+                          <span className="text-center">Grade</span>
+                          <span className="text-center">Hygiene</span>
+                          <span className="text-center">Food Safety</span>
+                        </div>
+                        <div className="divide-y divide-slate-50">
+                          {auditSessions
+                            .filter((s: any) => s.passFail !== "Pending")
+                            .sort((a: any, b: any) => b.overallScore - a.overallScore)
+                            .map((s: any) => {
+                              const grade = s.overallScore >= 90 ? "A" : s.overallScore >= 80 ? "B" : s.overallScore >= 70 ? "C" : "F";
+                              const gradeColor = grade === "A" ? "text-emerald-600" : grade === "B" ? "text-blue-600" : grade === "C" ? "text-amber-600" : "text-rose-600";
+                              return (
+                                <div key={s.id} className="px-4 py-2.5 grid grid-cols-5 items-center hover:bg-slate-50/50">
+                                  <span className="font-semibold text-slate-800">{s.outletName}</span>
+                                  <span className="text-center font-black text-slate-700">{s.overallScore.toFixed(1)}</span>
+                                  <span className={`text-center font-black text-lg ${gradeColor}`}>{grade}</span>
+                                  <span className="text-center text-slate-600">{s.hygieneScore.toFixed(0)}%</span>
+                                  <span className="text-center text-slate-600">{s.foodSafetyScore.toFixed(0)}%</span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top risks */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Top Risk Areas</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { risk: "Cold Chain Compliance", detail: "2 outlets flagged for temperature deviations above safe threshold", severity: "Critical" },
+                          { risk: "Cash POS Reconciliation", detail: "Payment settlement mismatch detected across 3 outlets", severity: "High" },
+                          { risk: "Staff Certification Gaps", detail: "Multiple staff members below re-certification threshold", severity: "High" },
+                        ].map((r, i) => (
+                          <div key={i} className={`p-3 rounded-xl border text-xs ${r.severity === "Critical" ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"}`}>
+                            <span className={`text-[9px] font-bold uppercase ${r.severity === "Critical" ? "text-rose-600" : "text-amber-600"}`}>{r.severity}</span>
+                            <p className="font-bold text-slate-900 mt-0.5">{r.risk}</p>
+                            <p className="text-[10px] text-slate-600 mt-1">{r.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommended actions */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Recommended Actions</h4>
+                      <div className="space-y-2">
+                        {[
+                          "📦 Immediate refrigeration audit at Anna Nagar Cafe — verify cold chain compliance and replace faulty unit",
+                          "💳 Pull POS void logs for Mumbai Central and cross-reference with supervisor sign-off records",
+                          "👤 Schedule mandatory food safety re-certification for flagged staff before next audit cycle",
+                          "🔧 Prioritize resolution of 2 Critical facility incidents within 24-hour SLA window",
+                          "📋 Establish monthly rolling audit schedule — minimum quarterly visits per outlet",
+                        ].map((action, i) => (
+                          <div key={i} className="bg-slate-50 rounded-xl border border-slate-100 px-4 py-2.5 text-xs text-slate-700 flex items-start gap-2">
+                            <span className="text-slate-400 font-bold text-[10px] shrink-0 mt-0.5">{i + 1}.</span>
+                            <span className="leading-relaxed">{action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OTHER STEPS (1, 2, 8, 9, 10) Rendering within section */}
+          {![3, 4, 5, 6, 7].includes(activeStepId) && (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
                 <Icons.Workflow />
@@ -2349,6 +3096,7 @@ export default function OperationsDashboard() {
               </div>
             </div>
           )}
+
         </main>
       </div>
       </div>

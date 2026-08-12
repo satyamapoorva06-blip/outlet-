@@ -32,10 +32,6 @@ Make sure you have the following installed on your system:
 
 ## 🚀 Quick Start Guide
 
-Open a new VS Code terminal after opening this folder. This workspace selects
-**Command Prompt** as its default terminal so the standard `npm` commands below
-work even when PowerShell script execution is restricted.
-
 ### Option 1: Run Frontend Only (Demo Mode)
 
 The frontend automatically falls back to an built-in deterministic demo dataset if the backend server is not running.

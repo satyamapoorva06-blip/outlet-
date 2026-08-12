@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Next.js Edge Middleware — Server-side route protection.
+ * Next.js Edge Proxy — Server-side route protection.
  *
  * Checks for the presence of a `fo_token` cookie on protected routes.
  * If absent, redirects to /login. This prevents the flash of dashboard
  * content that occurs with client-side-only guards.
  *
- * NOTE: Edge middleware cannot verify JWT signatures (no access to
+ * NOTE: Edge proxy cannot verify JWT signatures (no access to
  * jsonwebtoken / Node crypto). It only checks token *presence*.
  * Actual validation happens server-side via the Express authenticateToken
  * middleware on each API call.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes that don't require authentication

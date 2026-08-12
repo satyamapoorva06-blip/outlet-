@@ -13,14 +13,6 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
-  {
-    rules: {
-      // The dashboard contains API response models that are incrementally typed.
-      "@typescript-eslint/no-explicit-any": "warn",
-      // This application intentionally initializes client auth/data state from effects.
-      "react-hooks/set-state-in-effect": "warn",
-    },
-  },
 ]);
 
 export default eslintConfig;

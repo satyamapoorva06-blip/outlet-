@@ -9,62 +9,13 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'franchiseops_super_secret_jwt_key_2026';
 const prisma = new PrismaClient();
-const fs = require('fs');
-const path = require('path');
 
 app.use(cors());
 app.use(express.json());
 
-// Root health & status endpoint
-app.get('/', (req, res) => {
-  res.json({
-    status: 'online',
-    message: 'FranchiseOps AI Backend REST API Server is running.',
-    frontend_url: 'http://localhost:3000',
-    api_endpoints: [
-      '/api/auth/login',
-      '/api/auth/signup',
-      '/api/outlets',
-      '/api/outlets/compare',
-      '/api/sales/metrics',
-      '/api/sales/trends',
-      '/api/sales/list',
-      '/api/inventory',
-      '/api/marketing/campaigns',
-      '/api/marketing/roi',
-      '/api/marketing/recommendations',
-      '/api/marketing/predict',
-      '/api/marketing/social-connections'
-    ]
-  });
-});
-
-// Debug: list registered routes (temporary)
-app.get('/debug/routes', (req, res) => {
-  try {
-    const routes = [];
-    app._router.stack.forEach((middleware) => {
-      if (middleware.route) {
-        const methods = Object.keys(middleware.route.methods).join(',').toUpperCase();
-        routes.push({ path: middleware.route.path, methods });
-      } else if (middleware.name === 'router' && middleware.handle && middleware.handle.stack) {
-        middleware.handle.stack.forEach((handler) => {
-          if (handler.route) {
-            const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
-            routes.push({ path: handler.route.path, methods });
-          }
-        });
-      }
-    });
-    res.json(routes.sort((a,b)=>a.path.localeCompare(b.path)));
-  } catch (e) {
-    res.status(500).json({ error: 'Failed to list routes', detail: String(e) });
-  }
-});
-
 // Test DB connection on startup
 prisma.$connect()
-  .then(() => console.log('Successfully connected to database'))
+  .then(() => console.log('Successfully connected to SQLite database'))
   .catch(err => console.error('Database connection failed:', err));
 
 const authenticateToken = (req, res, next) => {
@@ -159,14 +110,10 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // ==========================================
 app.get('/api/outlets', async (req, res) => {
   try {
-    console.log('[server] GET /api/outlets start');
     const outlets = await prisma.outlets.findMany({ where: { is_active: true }, orderBy: { id: 'asc' } });
-    console.log('[server] GET /api/outlets fetched', outlets.length);
     res.json(outlets);
   } catch (error) {
-    const msg = `[${new Date().toISOString()}] Error fetching outlets: ${error}\n${error && error.stack}\n`;
-    console.error('Error fetching outlets:', error, error && error.stack);
-    try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), msg); } catch (e) { console.error('Failed to write server_error.log', e); }
+    console.error('Error fetching outlets:', error);
     res.status(500).json({ error: 'Server error fetching outlets' });
   }
 });
@@ -545,202 +492,926 @@ app.get('/api/staff/agent-insights', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// 6. MARKETING / CAMPAIGN INSIGHTS
+// 6. MARKETING AGENT ENDPOINTS
 // ==========================================
-const marketing = require('./marketing');
+const { spawn } = require('child_process');
+const path = require('path');
 
+// Helper function to call the Python Scikit-Learn script
+function runPythonTask(task, data) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, 'ai', 'marketing_ai.py');
+    const pythonProcess = spawn('python', [scriptPath, task]);
+
+    let stdout = '';
+    let stderr = '';
+
+    if (data) {
+      pythonProcess.stdin.write(JSON.stringify(data));
+      pythonProcess.stdin.end();
+    }
+
+    pythonProcess.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    pythonProcess.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`Python task "${task}" failed. Stderr:`, stderr);
+        return reject(new Error(stderr || `Python exited with code ${code}`));
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (err) {
+        reject(new Error(`Failed to parse Python JSON output: ${stdout}. Stderr: ${stderr}`));
+      }
+    });
+  });
+}
+
+// 6.1 API KPIs Aggregation
+app.get('/api/marketing/kpis', authenticateToken, async (req, res) => {
+  try {
+    const [campaigns, roiReports, customersList, metrics] = await Promise.all([
+      prisma.campaigns.findMany(),
+      prisma.roi_reports.findMany(),
+      prisma.customers.findMany(),
+      prisma.marketing_metrics.findMany()
+    ]);
+
+    const totalSpend = roiReports.reduce((s, r) => s + r.total_spend, 0);
+    const attributedRevenue = roiReports.reduce((s, r) => s + r.attributed_revenue, 0);
+    const netRoi = attributedRevenue - totalSpend;
+    const roas = totalSpend > 0 ? parseFloat((attributedRevenue / totalSpend).toFixed(2)) : 0;
+
+    let totalClicks = 0;
+    let totalImpressions = 0;
+    let totalConversions = 0;
+    metrics.forEach(m => {
+      totalClicks += m.clicks;
+      totalImpressions += m.impressions;
+      totalConversions += m.pos_sales_conversions;
+    });
+
+    const averageCtr = totalImpressions > 0 ? parseFloat(((totalClicks / totalImpressions) * 100).toFixed(2)) : 0;
+    const averageConvRate = totalClicks > 0 ? parseFloat(((totalConversions / totalClicks) * 100).toFixed(2)) : 0;
+
+    const sumEngagement = customersList.reduce((s, c) => s + c.calculated_engagement_score, 0);
+    const engagementIndex = customersList.length > 0 ? parseFloat((sumEngagement / customersList.length).toFixed(1)) : 50;
+
+    res.json({
+      totalSpend,
+      attributedRevenue,
+      netRoi,
+      roas,
+      averageCtr,
+      averageConvRate,
+      engagementIndex,
+      totalCustomers: customersList.length
+    });
+  } catch (error) {
+    console.error('Error fetching marketing KPIs:', error);
+    res.status(500).json({ error: 'Server error computing marketing KPIs' });
+  }
+});
+
+// 6.2 Campaign & ROI List
 app.get('/api/marketing/campaigns', authenticateToken, async (req, res) => {
   try {
-    const campaigns = marketing.loadCampaigns();
-    res.json(campaigns);
+    const list = await prisma.campaigns.findMany({
+      include: {
+        roi_reports: true,
+        marketing_metrics: {
+          orderBy: { recorded_date: 'asc' }
+        }
+      },
+      orderBy: { id: 'desc' }
+    });
+    res.json(list);
   } catch (error) {
-    console.error('Error loading campaigns:', error);
-    res.status(500).json({ error: 'Server error loading campaigns' });
+    console.error('Error fetching campaigns list:', error);
+    res.status(500).json({ error: 'Server error fetching campaigns' });
   }
 });
 
-app.post('/api/marketing/campaigns', authenticateToken, async (req, res) => {
+// 6.3 Data Ingest Webhook
+app.post('/api/marketing/data-ingest', authenticateToken, async (req, res) => {
   try {
-    const campaigns = marketing.loadCampaigns();
-    const nextId = campaigns.length > 0 ? Math.max(...campaigns.map(c=>c.id)) + 1 : 1;
-    const payload = { id: nextId, ...req.body };
-    campaigns.push(payload);
-    marketing.saveCampaigns(campaigns);
-    res.status(201).json(payload);
-  } catch (error) {
-    console.error('Error saving campaign:', error);
-    res.status(500).json({ error: 'Server error saving campaign' });
-  }
-});
+    const { campaignId, clicks, impressions, posSalesConversions, sentimentScore, couponRedemptions, recordedDate } = req.body;
 
-app.get('/api/marketing/roi', authenticateToken, async (req, res) => {
-  try {
-    const { campaignId } = req.query;
-    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
-    const campaigns = marketing.loadCampaigns();
-    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
-    res.json(metrics);
-  } catch (error) {
-    console.error('Error computing campaign ROI:', error);
-    res.status(500).json({ error: 'Server error computing ROI' });
-  }
-});
-
-app.get('/api/marketing/recommendations', authenticateToken, async (req, res) => {
-  try {
-    const { campaignId } = req.query;
-    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
-    const campaigns = marketing.loadCampaigns();
-    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
-    res.json({ recommendations: metrics.recommendations, metrics });
-  } catch (error) {
-    console.error('Error generating recommendations:', error);
-    res.status(500).json({ error: 'Server error computing recommendations' });
-  }
-});
-
-app.post('/api/marketing/predict', authenticateToken, async (req, res) => {
-  try {
-    const { campaignId, channel, budget } = req.body;
-    if (!campaignId) return res.status(400).json({ error: 'campaignId is required' });
-    const campaign = marketing.loadCampaigns().find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const targetBudget = Number(budget);
-    if (budget !== undefined && (!Number.isFinite(targetBudget) || targetBudget <= 0)) {
-      return res.status(400).json({ error: 'budget must be a positive number' });
+    if (!campaignId || !recordedDate) {
+      return res.status(400).json({ error: 'campaignId and recordedDate are required' });
     }
-    const predictionCampaign = {
-      ...campaign,
-      cost: Number.isFinite(targetBudget) ? targetBudget : campaign.cost,
-      channels: channel ? [channel] : campaign.channels
+
+    const campaign = await prisma.campaigns.findUnique({ where: { id: parseInt(campaignId, 10) } });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    // Insert metric
+    const metric = await prisma.marketing_metrics.create({
+      data: {
+        campaign_id: parseInt(campaignId, 10),
+        clicks: parseInt(clicks, 10) || 0,
+        impressions: parseInt(impressions, 10) || 0,
+        pos_sales_conversions: parseInt(posSalesConversions, 10) || 0,
+        sentiment_score: parseFloat(sentimentScore) || 0.0,
+        coupon_redemptions: parseInt(couponRedemptions, 10) || 0,
+        recorded_date: recordedDate
+      }
+    });
+
+    // Recompute campaign's ROI report
+    const allMetrics = await prisma.marketing_metrics.findMany({ where: { campaign_id: parseInt(campaignId, 10) } });
+    let totalConversions = 0;
+    allMetrics.forEach(m => {
+      totalConversions += m.pos_sales_conversions;
+    });
+
+    const avgAOV = campaign.channel === "POS Coupons" ? 220 : 310;
+    const attributed_revenue = parseFloat((totalConversions * avgAOV).toFixed(2));
+    const total_spend = campaign.budget;
+    const net_roi = parseFloat((attributed_revenue - total_spend).toFixed(2));
+    const efficiency_ratio = total_spend > 0 ? parseFloat((attributed_revenue / total_spend).toFixed(2)) : 0;
+
+    await prisma.roi_reports.deleteMany({ where: { campaign_id: parseInt(campaignId, 10) } });
+    const roiReport = await prisma.roi_reports.create({
+      data: {
+        campaign_id: parseInt(campaignId, 10),
+        total_spend,
+        attributed_revenue,
+        net_roi,
+        efficiency_ratio,
+        calculated_timestamp: new Date()
+      }
+    });
+
+    res.json({ message: 'Metric ingested successfully and ROI recalculated', metric, roiReport });
+  } catch (error) {
+    console.error('Error in marketing data ingestion:', error);
+    res.status(500).json({ error: 'Server error ingesting marketing data' });
+  }
+});
+
+// 6.4 AI Predict campaign success
+app.post('/api/marketing/ai/predict', authenticateToken, async (req, res) => {
+  try {
+    const { budget, channel } = req.body;
+    if (!budget || !channel) {
+      return res.status(400).json({ error: 'budget and channel are required' });
+    }
+
+    const campaignsList = await prisma.campaigns.findMany({
+      include: { marketing_metrics: true }
+    });
+
+    const historical = campaignsList.map(c => {
+      const clicks = c.marketing_metrics.reduce((s, m) => s + m.clicks, 0);
+      const impressions = c.marketing_metrics.reduce((s, m) => s + m.impressions, 0);
+      const pos_sales_conversions = c.marketing_metrics.reduce((s, m) => s + m.pos_sales_conversions, 0);
+      return {
+        channel: c.channel,
+        budget: c.budget,
+        clicks,
+        impressions,
+        pos_sales_conversions
+      };
+    });
+
+    const prediction = await runPythonTask('predict', {
+      campaign: { budget, channel },
+      historical_campaigns: historical
+    });
+
+    res.json(prediction);
+  } catch (error) {
+    console.error('Error running campaign prediction:', error);
+    res.status(500).json({ error: 'Server error running AI predictor' });
+  }
+});
+
+// 6.5 AI Customer Segmentation (K-Means)
+app.get('/api/marketing/ai/segmentation', authenticateToken, async (req, res) => {
+  try {
+    const customers = await prisma.customers.findMany();
+    const result = await runPythonTask('segmentation', { customers });
+
+    // Update database in background for consistency
+    if (result && result.customers) {
+      for (const c of result.customers) {
+        await prisma.customers.update({
+          where: { id: c.id },
+          data: { segment: c.segment }
+        }).catch(err => console.error(`Error updating customer ${c.id}:`, err));
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error running customer segmentation:', error);
+    res.status(500).json({ error: 'Server error running AI segmentation' });
+  }
+});
+
+// 6.6 AI Sentiment feeds
+app.get('/api/marketing/ai/sentiment', authenticateToken, async (req, res) => {
+  try {
+    const feedbackComments = [
+      { id: 1, text: "The Indiranagar outlet is fantastic! Best espresso in town." },
+      { id: 2, text: "I love the butter croissants, but the queue during peak morning hours is too long." },
+      { id: 3, text: "Waiters were quite slow, and tables in the Anna Nagar cafe were sticky." },
+      { id: 4, text: "Double point Wednesdays is an awesome reward program! Really love the vibes." },
+      { id: 5, text: "Overpriced coffee and rude staff in Pune bistro." },
+      { id: 6, text: "Tried the new Organic Cold Brew, it tasted very fresh and delicious." },
+      { id: 7, text: "My coffee was served cold, highly disappointed." },
+      { id: 8, text: "Super cozy atmosphere at Bandra. The espresso barista is highly skilled." }
+    ];
+
+    const sentimentResult = await runPythonTask('sentiment', { comments: feedbackComments });
+    res.json(sentimentResult);
+  } catch (error) {
+    console.error('Error running sentiment analysis:', error);
+    res.status(500).json({ error: 'Server error running sentiment analyzer' });
+  }
+});
+
+// 6.7 AI Trend Forecasting
+app.get('/api/marketing/ai/forecast', authenticateToken, async (req, res) => {
+  try {
+    // Fetch daily metrics
+    const metrics = await prisma.marketing_metrics.findMany({
+      orderBy: { recorded_date: 'asc' }
+    });
+
+    // Group conversions by date
+    const dailyMap = {};
+    metrics.forEach(m => {
+      if (!dailyMap[m.recorded_date]) {
+        dailyMap[m.recorded_date] = 0;
+      }
+      dailyMap[m.recorded_date] += m.pos_sales_conversions;
+    });
+
+    const dailyMetrics = Object.keys(dailyMap).map(date => ({
+      recorded_date: date,
+      pos_sales_conversions: dailyMap[date]
+    }));
+
+    const forecast = await runPythonTask('forecast', { daily_metrics: dailyMetrics });
+    res.json(forecast);
+  } catch (error) {
+    console.error('Error running trend forecasting:', error);
+    res.status(500).json({ error: 'Server error running AI forecasting' });
+  }
+});
+
+// 6.8 AI Recommendations
+app.get('/api/marketing/ai/recommendations', authenticateToken, async (req, res) => {
+  try {
+    const campaigns = await prisma.campaigns.findMany({
+      include: { roi_reports: true }
+    });
+
+    const campaignsData = campaigns.map(c => {
+      const rep = c.roi_reports[0] || { total_spend: c.budget, attributed_revenue: 0 };
+      return {
+        id: c.id,
+        name: c.name,
+        channel: c.channel,
+        budget: c.budget,
+        attributed_revenue: rep.attributed_revenue
+      };
+    });
+
+    const recommendations = await runPythonTask('recommendations', { campaigns: campaignsData });
+    res.json(recommendations);
+  } catch (error) {
+    console.error('Error generating AI recommendations:', error);
+    res.status(500).json({ error: 'Server error generating recommendations' });
+  }
+});
+
+// 6.9 Apply Recommendation
+app.post('/api/marketing/recommendations/apply', authenticateToken, async (req, res) => {
+  try {
+    const { reallocation_details, campaign_id } = req.body;
+
+    if (reallocation_details) {
+      const { source_channel, target_channel, shift_amount } = reallocation_details;
+
+      // Find campaigns under source channel and target channel to shift budget
+      const sourceCampaigns = await prisma.campaigns.findMany({ where: { channel: source_channel, status: 'Active' } });
+      const targetCampaigns = await prisma.campaigns.findMany({ where: { channel: target_channel, status: 'Active' } });
+
+      if (sourceCampaigns.length > 0 && targetCampaigns.length > 0) {
+        const srcCamp = sourceCampaigns[0];
+        const tgtCamp = targetCampaigns[0];
+
+        const finalSrcBudget = Math.max(0, srcCamp.budget - shift_amount);
+        const finalTgtBudget = tgtCamp.budget + shift_amount;
+
+        await prisma.campaigns.update({
+          where: { id: srcCamp.id },
+          data: { budget: finalSrcBudget }
+        });
+
+        await prisma.campaigns.update({
+          where: { id: tgtCamp.id },
+          data: { budget: finalTgtBudget }
+        });
+
+        // Update corresponding ROI reports
+        const allSrcMetrics = await prisma.marketing_metrics.findMany({ where: { campaign_id: srcCamp.id } });
+        const allTgtMetrics = await prisma.marketing_metrics.findMany({ where: { campaign_id: tgtCamp.id } });
+
+        const srcConv = allSrcMetrics.reduce((s, m) => s + m.pos_sales_conversions, 0);
+        const tgtConv = allTgtMetrics.reduce((s, m) => s + m.pos_sales_conversions, 0);
+
+        const srcAOV = srcCamp.channel === "POS Coupons" ? 220 : 310;
+        const tgtAOV = tgtCamp.channel === "POS Coupons" ? 220 : 310;
+
+        await prisma.roi_reports.deleteMany({ where: { campaign_id: srcCamp.id } });
+        await prisma.roi_reports.create({
+          data: {
+            campaign_id: srcCamp.id,
+            total_spend: finalSrcBudget,
+            attributed_revenue: srcConv * srcAOV,
+            net_roi: (srcConv * srcAOV) - finalSrcBudget,
+            efficiency_ratio: finalSrcBudget > 0 ? (srcConv * srcAOV) / finalSrcBudget : 0,
+            calculated_timestamp: new Date()
+          }
+        });
+
+        await prisma.roi_reports.deleteMany({ where: { campaign_id: tgtCamp.id } });
+        await prisma.roi_reports.create({
+          data: {
+            campaign_id: tgtCamp.id,
+            total_spend: finalTgtBudget,
+            attributed_revenue: tgtConv * tgtAOV,
+            net_roi: (tgtConv * tgtAOV) - finalTgtBudget,
+            efficiency_ratio: finalTgtBudget > 0 ? (tgtConv * tgtAOV) / finalTgtBudget : 0,
+            calculated_timestamp: new Date()
+          }
+        });
+
+        return res.json({ message: `Successfully reallocated ₹${shift_amount} from ${source_channel} to ${target_channel}` });
+      }
+    } else if (campaign_id) {
+      // General campaign target optimization alert log
+      return res.json({ message: `Applied audience targeting refinement for Campaign ID ${campaign_id}` });
+    }
+
+    res.status(400).json({ error: 'Invalid reallocation parameters or campaign ID' });
+  } catch (error) {
+    console.error('Error applying marketing recommendation:', error);
+    res.status(500).json({ error: 'Server error applying recommendation' });
+  }
+});
+
+// ==========================================
+// 7. AUDIT AGENT ENDPOINTS
+// ==========================================
+
+// Default SOP checklist templates by category
+const AUDIT_CHECKLIST_TEMPLATES = {
+  Hygiene: [
+    { question: 'All food contact surfaces sanitised and free of residue', score_weight: 8 },
+    { question: 'Handwashing stations stocked with soap and sanitiser', score_weight: 7 },
+    { question: 'Staff wearing appropriate PPE (gloves, hairnets, aprons)', score_weight: 8 },
+    { question: 'Waste bins sealed, labelled, and emptied per schedule', score_weight: 6 },
+    { question: 'Restrooms clean, stocked and inspected within last 2 hours', score_weight: 6 },
+    { question: 'Floors, walls, and ceilings free of mould and grease buildup', score_weight: 5 },
+  ],
+  'Food Safety': [
+    { question: 'All perishable items stored at correct temperature (0–5°C)', score_weight: 10 },
+    { question: 'FIFO stock rotation applied to all ingredient batches', score_weight: 8 },
+    { question: 'No expired or near-expiry items in active storage zones', score_weight: 10 },
+    { question: 'Food thermometers calibrated and logs signed today', score_weight: 7 },
+    { question: 'Allergen menu information displayed and up to date', score_weight: 6 },
+    { question: 'Pest control records current and no active pest signs', score_weight: 9 },
+  ],
+  'Opening Procedure': [
+    { question: 'Opening checklist signed by manager-on-duty', score_weight: 6 },
+    { question: 'All equipment powered on and tested before opening', score_weight: 7 },
+    { question: 'Cash drawer float verified and counted', score_weight: 8 },
+    { question: 'POS system online and syncing to HQ', score_weight: 7 },
+    { question: 'Temperature logs completed for all cold storage units', score_weight: 6 },
+  ],
+  'Closing Procedure': [
+    { question: 'Closing checklist signed by manager-on-duty', score_weight: 6 },
+    { question: 'End-of-day cash reconciliation completed and locked', score_weight: 10 },
+    { question: 'All perishables properly sealed and refrigerated', score_weight: 8 },
+    { question: 'Security alarm set and exit doors locked', score_weight: 8 },
+    { question: 'Deep cleaning of prep surfaces completed', score_weight: 7 },
+  ],
+  SOP: [
+    { question: 'Brand standard uniform worn by all on-shift staff', score_weight: 5 },
+    { question: 'Customer greeting SOP followed at POS (within 30 sec)', score_weight: 6 },
+    { question: 'Order accuracy rate above 98% based on today\'s log review', score_weight: 8 },
+    { question: 'Upsell prompts correctly applied per training manual', score_weight: 5 },
+    { question: 'Incident log book updated and accessible', score_weight: 6 },
+    { question: 'Staff certifications (food safety, first aid) visible on-site', score_weight: 7 },
+  ],
+};
+
+// 7.1 GET audit sessions (filterable by outletId, status)
+app.get('/api/audit/sessions', authenticateToken, async (req, res) => {
+  try {
+    const { outletId, status } = req.query;
+    const rows = await prisma.audit_sessions.findMany({
+      where: {
+        ...(outletId && outletId !== 'all' ? { outlet_id: parseInt(outletId, 10) } : {}),
+        ...(status && status !== 'all' ? { status } : {}),
+      },
+      include: {
+        findings: { select: { id: true, severity: true, status: true } },
+        _count: { select: { checklist_items: true } },
+      },
+      orderBy: { audit_date: 'desc' },
+    });
+
+    const sessions = await Promise.all(rows.map(async s => {
+      const outlet = await prisma.outlets.findUnique({ where: { id: s.outlet_id }, select: { outlet_name: true, city: true, manager_name: true } });
+      const criticalFindings = s.findings.filter(f => f.severity === 'Critical' && f.status !== 'Resolved').length;
+      return {
+        id: s.id, outletId: s.outlet_id, outletName: outlet?.outlet_name || 'Unknown',
+        city: outlet?.city || '', manager: outlet?.manager_name || '',
+        auditorName: s.auditor_name, auditDate: s.audit_date, status: s.status,
+        overallScore: s.overall_score, maxScore: s.max_score, passFail: s.pass_fail,
+        hygieneScore: s.hygiene_score, foodSafetyScore: s.food_safety_score,
+        sopScore: s.sop_score, facilityScore: s.facility_score,
+        checklistCount: s._count.checklist_items, criticalFindings,
+        totalFindings: s.findings.length, notes: s.notes,
+      };
+    }));
+    res.json(sessions);
+  } catch (error) {
+    console.error('Error fetching audit sessions:', error);
+    res.status(500).json({ error: 'Server error fetching audit sessions' });
+  }
+});
+
+// 7.2 POST create new audit session
+app.post('/api/audit/sessions', authenticateToken, async (req, res) => {
+  try {
+    const { outletId, auditorName, auditDate, notes } = req.body;
+    if (!outletId || !auditorName || !auditDate) {
+      return res.status(400).json({ error: 'outletId, auditorName, and auditDate are required' });
+    }
+    const outlet = await prisma.outlets.findUnique({ where: { id: parseInt(outletId, 10) } });
+    if (!outlet) return res.status(404).json({ error: 'Outlet not found' });
+
+    const session = await prisma.audit_sessions.create({
+      data: {
+        outlet_id: parseInt(outletId, 10), auditor_name: auditorName,
+        audit_date: auditDate, status: 'In Progress', notes: notes || null,
+      },
+    });
+
+    // Auto-create checklist items from templates
+    const items = [];
+    for (const [category, questions] of Object.entries(AUDIT_CHECKLIST_TEMPLATES)) {
+      for (const q of questions) {
+        items.push({ session_id: session.id, category, question: q.question, score_weight: q.score_weight });
+      }
+    }
+    await prisma.audit_checklist_items.createMany({ data: items });
+
+    res.status(201).json({ message: 'Audit session created', sessionId: session.id });
+  } catch (error) {
+    console.error('Error creating audit session:', error);
+    res.status(500).json({ error: 'Server error creating audit session' });
+  }
+});
+
+// 7.3 GET single audit session detail with checklist
+app.get('/api/audit/sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const session = await prisma.audit_sessions.findUnique({
+      where: { id },
+      include: { checklist_items: { orderBy: [{ category: 'asc' }, { id: 'asc' }] }, findings: { orderBy: { severity: 'asc' } }, media_uploads: true },
+    });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    const outlet = await prisma.outlets.findUnique({ where: { id: session.outlet_id }, select: { outlet_name: true, city: true } });
+    res.json({ ...session, outletName: outlet?.outlet_name, city: outlet?.city });
+  } catch (error) {
+    console.error('Error fetching session detail:', error);
+    res.status(500).json({ error: 'Server error fetching session detail' });
+  }
+});
+
+// 7.4 POST update checklist item answer
+app.put('/api/audit/checklist-items/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { answer, notes, photoUrl } = req.body;
+    if (!answer) return res.status(400).json({ error: 'answer is required' });
+    const updated = await prisma.audit_checklist_items.update({
+      where: { id },
+      data: { answer, notes: notes || null, photo_url: photoUrl || null },
+    });
+    res.json({ message: 'Checklist item updated', item: updated });
+  } catch (error) {
+    console.error('Error updating checklist item:', error);
+    res.status(500).json({ error: 'Server error updating checklist item' });
+  }
+});
+
+// 7.5 POST complete/finalize audit session — computes scores
+app.post('/api/audit/sessions/:id/complete', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const session = await prisma.audit_sessions.findUnique({ where: { id }, include: { checklist_items: true } });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Score computation by category
+    const catScores = {};
+    let totalEarned = 0, totalPossible = 0;
+    for (const item of session.checklist_items) {
+      if (!catScores[item.category]) catScores[item.category] = { earned: 0, possible: 0 };
+      catScores[item.category].possible += item.score_weight;
+      totalPossible += item.score_weight;
+      if (item.answer === 'Pass') {
+        catScores[item.category].earned += item.score_weight;
+        totalEarned += item.score_weight;
+      } else if (item.answer === 'N/A') {
+        catScores[item.category].possible -= item.score_weight;
+        totalPossible -= item.score_weight;
+      }
+    }
+
+    const overallScore = totalPossible > 0 ? parseFloat(((totalEarned / totalPossible) * 100).toFixed(1)) : 0;
+    const passFail = overallScore >= 70 ? 'Pass' : 'Fail';
+
+    const getScore = (cat) => {
+      const s = catScores[cat];
+      if (!s || s.possible === 0) return 0;
+      return parseFloat(((s.earned / s.possible) * 100).toFixed(1));
     };
-    res.json(await marketing.predictCampaignSuccess(prisma, predictionCampaign));
-  } catch (error) {
-    console.error('Error predicting campaign success:', error);
-    res.status(500).json({ error: 'Server error predicting campaign success' });
-  }
-});
 
-app.get('/api/marketing/social-connections', authenticateToken, (req, res) => {
-  res.json(marketing.loadSocialConnections());
-});
+    await prisma.audit_sessions.update({
+      where: { id },
+      data: {
+        status: 'Completed', overall_score: overallScore,
+        max_score: 100, pass_fail: passFail,
+        hygiene_score: getScore('Hygiene'),
+        food_safety_score: getScore('Food Safety'),
+        sop_score: getScore('SOP'),
+        facility_score: getScore('Opening Procedure'),
+        updated_at: new Date(),
+      },
+    });
 
-app.put('/api/marketing/social-connections/:id', authenticateToken, (req, res) => {
-  const connection = marketing.updateSocialConnection(req.params.id, Boolean(req.body.connected));
-  if (!connection) return res.status(404).json({ error: 'Social channel not found' });
-  res.json(connection);
-});
-
-app.post('/api/marketing/social-posts', authenticateToken, (req, res) => {
-  const { message, channels, scheduledFor, campaignId } = req.body;
-  if (!message || !Array.isArray(channels) || channels.length === 0) {
-    return res.status(400).json({ error: 'A message and at least one channel are required' });
-  }
-  const connectedChannels = marketing.loadSocialConnections().filter((item) => item.connected).map((item) => item.id);
-  const unavailable = channels.filter((channel) => !connectedChannels.includes(channel));
-  if (unavailable.length) return res.status(400).json({ error: `Connect ${unavailable.join(', ')} before publishing.` });
-  res.status(201).json(marketing.createSocialPost({ message, channels, scheduledFor, campaignId }));
-});
-
-// Duplicate/alternate export endpoint to ensure CSV download works reliably.
-app.get('/api/marketing/download', authenticateToken, async (req, res) => {
-  console.log('[server] GET /api/marketing/download start');
-  try {
-    const { campaignId } = req.query;
-    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
-    const campaigns = marketing.loadCampaigns();
-    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
-
-    const rows = [
-      ['Metric', 'Value'],
-      ['Campaign Name', campaign.name],
-      ['Campaign Start', campaign.startDate],
-      ['Campaign End', campaign.endDate],
-      ['Campaign Cost', metrics.cost],
-      ['Revenue Before', metrics.revenueBefore],
-      ['Revenue During', metrics.revenueDuring],
-      ['Incremental Revenue', metrics.incrementalRevenue],
-      ['ROI', metrics.roi],
-      ['Uplift Percent', metrics.upliftPercent]
-    ];
-
-    const channelRows = [['Channel', 'Budget Share', 'ROI Score', 'Recommendation']].concat(
-      metrics.channelInsights.map((ch) => [ch.channel, ch.budgetShare, ch.roiScore, ch.recommendation])
-    );
-
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-      + '\n\n'
-      + channelRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaign.id}-report.csv"`);
-    res.send(csv);
-  } catch (error) {
-    console.error('Error exporting campaign report (download endpoint):', error);
-    res.status(500).json({ error: 'Server error exporting campaign report' });
-  }
-});
-
-app.get('/api/marketing/export', authenticateToken, async (req, res) => {
-  console.log('[server] GET /api/marketing/export start');
-  try {
-    const { campaignId } = req.query;
-    if (!campaignId) return res.status(400).json({ error: 'campaignId query parameter required' });
-    const campaigns = marketing.loadCampaigns();
-    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const metrics = await marketing.computeCampaignMetrics(prisma, campaign);
-
-    const rows = [
-      ['Metric', 'Value'],
-      ['Campaign Name', campaign.name],
-      ['Campaign Start', campaign.startDate],
-      ['Campaign End', campaign.endDate],
-      ['Campaign Cost', metrics.cost],
-      ['Revenue Before', metrics.revenueBefore],
-      ['Revenue During', metrics.revenueDuring],
-      ['Incremental Revenue', metrics.incrementalRevenue],
-      ['ROI', metrics.roi],
-      ['Uplift Percent', metrics.upliftPercent]
-    ];
-
-    const channelRows = [['Channel', 'Budget Share', 'ROI Score', 'Recommendation']].concat(
-      metrics.channelInsights.map((ch) => [ch.channel, ch.budgetShare, ch.roiScore, ch.recommendation])
-    );
-
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-      + '\n\n'
-      + channelRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaign.id}-report.csv"`);
-    res.send(csv);
-  } catch (error) {
-    console.error('Error exporting campaign report:', error);
-    res.status(500).json({ error: 'Server error exporting campaign report' });
-  }
-});
-
-app.post('/api/marketing/schedules', authenticateToken, async (req, res) => {
-  try {
-    const { campaignId, frequency, nextRun } = req.body;
-    if (!campaignId || !frequency || !nextRun) {
-      return res.status(400).json({ error: 'campaignId, frequency, and nextRun are required' });
+    // Auto-generate findings for failed critical items
+    const failedItems = session.checklist_items.filter(i => i.answer === 'Fail');
+    for (const item of failedItems) {
+      const severity = item.score_weight >= 9 ? 'Critical' : item.score_weight >= 7 ? 'High' : 'Medium';
+      await prisma.audit_findings.create({
+        data: {
+          session_id: id, severity,
+          finding_type: item.category === 'Hygiene' || item.category === 'Food Safety' ? 'Hygiene' : 'SOP',
+          description: `FAILED: ${item.question}`,
+          status: 'Open',
+        },
+      });
     }
-    const campaigns = marketing.loadCampaigns();
-    const campaign = campaigns.find(c => String(c.id) === String(campaignId));
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-    const schedule = marketing.createSchedule(Number(campaignId), frequency, nextRun);
-    res.status(201).json(schedule);
+
+    res.json({ message: 'Audit session completed', overallScore, passFail });
   } catch (error) {
-    console.error('Error scheduling campaign report:', error);
-    res.status(500).json({ error: 'Server error scheduling campaign report' });
+    console.error('Error completing audit session:', error);
+    res.status(500).json({ error: 'Server error completing audit session' });
+  }
+});
+
+// 7.6 GET checklist templates
+app.get('/api/audit/checklists', authenticateToken, async (req, res) => {
+  try {
+    res.json(AUDIT_CHECKLIST_TEMPLATES);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error fetching checklist templates' });
+  }
+});
+
+// 7.7 GET inventory variance — compare current stock vs POS consumption estimate
+app.get('/api/audit/inventory-variance', authenticateToken, async (req, res) => {
+  try {
+    const { outletId } = req.query;
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+
+    const [inventoryRows, salesRows] = await Promise.all([
+      prisma.inventory.findMany({ where, include: { outlets: { select: { outlet_name: true, city: true } } } }),
+      prisma.sales.findMany({ where: outletId && outletId !== 'all' ? { outlet_id: parseInt(outletId, 10) } : {}, select: { total_orders: true, outlet_id: true } }),
+    ]);
+
+    const ordersByOutlet = {};
+    salesRows.forEach(s => {
+      ordersByOutlet[s.outlet_id] = (ordersByOutlet[s.outlet_id] || 0) + s.total_orders;
+    });
+
+    const varianceItems = inventoryRows.map(item => {
+      const totalOrders = ordersByOutlet[item.outlet_id] || 0;
+      // Estimated daily consumption based on category + order volume
+      const consumptionRate = item.category === 'Coffee' ? 0.015 : item.category === 'Dairy' ? 0.08 : item.category === 'Food' ? 0.025 : 0.01;
+      const estimatedConsumption = parseFloat((totalOrders * consumptionRate).toFixed(2));
+      const theoreticalRemaining = parseFloat((item.max_capacity - estimatedConsumption).toFixed(2));
+      const variance = parseFloat((item.current_stock - theoreticalRemaining).toFixed(2));
+      const variancePct = theoreticalRemaining > 0 ? parseFloat(((Math.abs(variance) / theoreticalRemaining) * 100).toFixed(1)) : 0;
+      const flagLevel = variancePct > 25 ? 'Critical' : variancePct > 12 ? 'High' : variancePct > 5 ? 'Medium' : 'Normal';
+      return {
+        id: item.id, outletId: item.outlet_id, outletName: item.outlets.outlet_name,
+        city: item.outlets.city, itemName: item.item_name, category: item.category,
+        currentStock: item.current_stock, unit: item.unit,
+        estimatedConsumption, theoreticalRemaining,
+        variance, variancePct, flagLevel, status: item.status,
+      };
+    });
+
+    varianceItems.sort((a, b) => b.variancePct - a.variancePct);
+    res.json({ items: varianceItems, summary: {
+      totalItems: varianceItems.length,
+      criticalVariance: varianceItems.filter(i => i.flagLevel === 'Critical').length,
+      highVariance: varianceItems.filter(i => i.flagLevel === 'High').length,
+      normal: varianceItems.filter(i => i.flagLevel === 'Normal').length,
+    }});
+  } catch (error) {
+    console.error('Error computing inventory variance:', error);
+    res.status(500).json({ error: 'Server error computing inventory variance' });
+  }
+});
+
+// 7.8 GET POS discrepancies — detect cash mismatch, voids, override patterns
+app.get('/api/audit/pos-discrepancies', authenticateToken, async (req, res) => {
+  try {
+    const { outletId } = req.query;
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+
+    const outlets = await prisma.outlets.findMany({
+      where: { is_active: true, ...(outletId && outletId !== 'all' ? { id: parseInt(outletId, 10) } : {}) },
+      include: { sales: { select: { gross_revenue: true, payment_cash: true, payment_card: true, payment_upi: true, total_orders: true, sale_date: true } } },
+    });
+
+    const discrepancies = outlets.map(outlet => {
+      const totalRevenue = outlet.sales.reduce((s, r) => s + r.gross_revenue, 0);
+      const totalCash = outlet.sales.reduce((s, r) => s + r.payment_cash, 0);
+      const totalCard = outlet.sales.reduce((s, r) => s + r.payment_card, 0);
+      const totalUpi = outlet.sales.reduce((s, r) => s + r.payment_upi, 0);
+      const recordedTotal = totalCash + totalCard + totalUpi;
+      const mismatch = parseFloat((totalRevenue - recordedTotal).toFixed(2));
+      const mismatchPct = totalRevenue > 0 ? parseFloat(((Math.abs(mismatch) / totalRevenue) * 100).toFixed(2)) : 0;
+
+      // Synthetic anomaly signals derived from payment split analysis
+      const cashRatio = totalRevenue > 0 ? (totalCash / totalRevenue) * 100 : 0;
+      const voidEstimate = Math.max(0, Math.floor((mismatchPct / 100) * outlet.sales.reduce((s, r) => s + r.total_orders, 0)));
+      const overrideFlags = cashRatio > 45 ? 'High cash dependency — manual override risk' : null;
+
+      const riskLevel = mismatchPct > 5 || cashRatio > 50 ? 'Critical' : mismatchPct > 2 || cashRatio > 40 ? 'High' : mismatchPct > 0.5 ? 'Medium' : 'Normal';
+
+      return {
+        outletId: outlet.id, outletName: outlet.outlet_name, city: outlet.city,
+        manager: outlet.manager_name, totalRevenue, recordedTotal,
+        mismatch: Math.abs(mismatch), mismatchPct,
+        paymentSplit: { cash: totalCash, card: totalCard, upi: totalUpi },
+        cashRatio: parseFloat(cashRatio.toFixed(1)),
+        estimatedVoids: voidEstimate,
+        overrideFlag: overrideFlags,
+        riskLevel,
+      };
+    });
+
+    discrepancies.sort((a, b) => b.mismatchPct - a.mismatchPct);
+    res.json({
+      discrepancies,
+      summary: {
+        totalMismatch: parseFloat(discrepancies.reduce((s, d) => s + d.mismatch, 0).toFixed(2)),
+        criticalOutlets: discrepancies.filter(d => d.riskLevel === 'Critical').length,
+        highRisk: discrepancies.filter(d => d.riskLevel === 'High').length,
+      },
+    });
+  } catch (error) {
+    console.error('Error computing POS discrepancies:', error);
+    res.status(500).json({ error: 'Server error computing POS discrepancies' });
+  }
+});
+
+// 7.9 GET shift verification — scheduled vs actual coverage + cert checks
+app.get('/api/audit/shift-verification', authenticateToken, async (req, res) => {
+  try {
+    const { outletId } = req.query;
+    const where = {};
+    if (outletId && outletId !== 'all') where.outlet_id = parseInt(outletId, 10);
+
+    const [outlets, staffRows] = await Promise.all([
+      prisma.outlets.findMany({ where: { is_active: true, ...(outletId && outletId !== 'all' ? { id: parseInt(outletId, 10) } : {}) }, select: { id: true, outlet_name: true, city: true, manager_name: true } }),
+      prisma.staff.findMany({ where, include: { outlets: { select: { outlet_name: true, city: true } } } }),
+    ]);
+
+    const outletVerification = outlets.map(outlet => {
+      const staff = staffRows.filter(s => s.outlet_id === outlet.id);
+      const scheduled = staff.length;
+      const active = staff.filter(s => s.status === 'Active').length;
+      const morning = staff.filter(s => s.shift_type === 'Morning').length;
+      const evening = staff.filter(s => s.shift_type === 'Evening').length;
+      const night = staff.filter(s => s.shift_type === 'Night').length;
+
+      // Certification gap: staff with performance < 3.5 flagged as needing re-certification
+      const certGaps = staff.filter(s => s.performance_rating < 3.5).map(s => ({
+        staffId: s.id, name: s.name, role: s.role, rating: s.performance_rating,
+        gap: 'Food safety re-certification required (rating below threshold)',
+      }));
+
+      // Shift coverage adequacy
+      const coverageFlag = active < 3 ? 'Understaffed' : active < 5 ? 'Borderline' : 'Adequate';
+      const managerPresent = staff.some(s => s.role === 'Manager' || s.role === 'Shift Supervisor');
+
+      return {
+        outletId: outlet.id, outletName: outlet.outlet_name, city: outlet.city, manager: outlet.manager_name,
+        scheduled, active, shiftBreakdown: { morning, evening, night },
+        coverageFlag, managerPresent, certificationGaps: certGaps,
+        attendanceRate: scheduled > 0 ? parseFloat(((active / scheduled) * 100).toFixed(1)) : 0,
+        riskLevel: certGaps.length > 2 || !managerPresent ? 'Critical' : certGaps.length > 0 || coverageFlag === 'Understaffed' ? 'High' : 'Normal',
+      };
+    });
+
+    res.json({
+      outlets: outletVerification,
+      summary: {
+        totalCertGaps: outletVerification.reduce((s, o) => s + o.certificationGaps.length, 0),
+        understaffedOutlets: outletVerification.filter(o => o.coverageFlag === 'Understaffed').length,
+        missingManagers: outletVerification.filter(o => !o.managerPresent).length,
+      },
+    });
+  } catch (error) {
+    console.error('Error verifying shift coverage:', error);
+    res.status(500).json({ error: 'Server error verifying shifts' });
+  }
+});
+
+// 7.10 GET/POST incidents
+app.get('/api/audit/incidents', authenticateToken, async (req, res) => {
+  try {
+    const { outletId, status } = req.query;
+    const rows = await prisma.audit_incidents.findMany({
+      where: {
+        ...(outletId && outletId !== 'all' ? { outlet_id: parseInt(outletId, 10) } : {}),
+        ...(status && status !== 'all' ? { status } : {}),
+      },
+      orderBy: [{ priority: 'asc' }, { reported_date: 'desc' }],
+    });
+
+    const incidents = await Promise.all(rows.map(async inc => {
+      const outlet = await prisma.outlets.findUnique({ where: { id: inc.outlet_id }, select: { outlet_name: true, city: true } });
+      return { ...inc, outletName: outlet?.outlet_name || 'Unknown', city: outlet?.city || '' };
+    }));
+
+    res.json({ incidents, summary: {
+      open: incidents.filter(i => i.status === 'Open').length,
+      inProgress: incidents.filter(i => i.status === 'In Progress').length,
+      resolved: incidents.filter(i => i.status === 'Resolved').length,
+      critical: incidents.filter(i => i.priority === 'Critical').length,
+    }});
+  } catch (error) {
+    console.error('Error fetching incidents:', error);
+    res.status(500).json({ error: 'Server error fetching incidents' });
+  }
+});
+
+app.post('/api/audit/incidents', authenticateToken, async (req, res) => {
+  try {
+    const { outletId, sessionId, title, description, incidentType, priority, assignedTo, reportedDate } = req.body;
+    if (!outletId || !title || !incidentType || !reportedDate) {
+      return res.status(400).json({ error: 'outletId, title, incidentType, and reportedDate are required' });
+    }
+    const incident = await prisma.audit_incidents.create({
+      data: {
+        outlet_id: parseInt(outletId, 10), session_id: sessionId ? parseInt(sessionId, 10) : null,
+        title, description: description || '', incident_type: incidentType,
+        priority: priority || 'Medium', assigned_to: assignedTo || null,
+        reported_date: reportedDate,
+      },
+    });
+    res.status(201).json({ message: 'Incident created', incident });
+  } catch (error) {
+    console.error('Error creating incident:', error);
+    res.status(500).json({ error: 'Server error creating incident' });
+  }
+});
+
+app.put('/api/audit/incidents/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { status, resolvedDate } = req.body;
+    const updated = await prisma.audit_incidents.update({
+      where: { id },
+      data: { status, resolved_date: resolvedDate || null, updated_at: new Date() },
+    });
+    res.json({ message: 'Incident updated', incident: updated });
+  } catch (error) {
+    console.error('Error updating incident:', error);
+    res.status(500).json({ error: 'Server error updating incident' });
+  }
+});
+
+// 7.11 GET anomaly flags — high-risk aggregated signals across all audit dimensions
+app.get('/api/audit/anomalies', authenticateToken, async (req, res) => {
+  try {
+    const { outletId } = req.query;
+    const where = outletId && outletId !== 'all' ? { outlet_id: parseInt(outletId, 10) } : {};
+
+    const [sessions, incidents, inventoryRows, staffRows, salesRows] = await Promise.all([
+      prisma.audit_sessions.findMany({ where, include: { findings: true } }),
+      prisma.audit_incidents.findMany({ where: { ...where, status: { not: 'Resolved' }, priority: { in: ['Critical', 'High'] } } }),
+      prisma.inventory.findMany({ where: { ...where, status: { in: ['Critical', 'Low Stock'] } } }),
+      prisma.staff.findMany({ where: { ...where, performance_rating: { lt: 3.5 } } }),
+      prisma.sales.findMany({ where, select: { gross_revenue: true, payment_cash: true, outlet_id: true } }),
+    ]);
+
+    const anomalies = [];
+
+    // Hygiene/Food Safety failures from sessions
+    sessions.forEach(s => {
+      const critFailed = s.findings.filter(f => f.severity === 'Critical' && f.status !== 'Resolved');
+      if (critFailed.length > 0) {
+        anomalies.push({
+          id: `session-${s.id}`, type: 'Hygiene / SOP Failure', severity: 'Critical',
+          description: `Audit session #${s.id} has ${critFailed.length} unresolved critical finding(s). Score: ${s.overall_score}/100`,
+          outletId: s.outlet_id, escalated: s.status === 'Escalated', timestamp: s.audit_date,
+          action: 'Immediate re-inspection required. Escalate to Regional Manager.',
+        });
+      }
+    });
+
+    // POS cash anomaly check
+    const cashByOutlet = {};
+    const revenueByOutlet = {};
+    salesRows.forEach(r => {
+      cashByOutlet[r.outlet_id] = (cashByOutlet[r.outlet_id] || 0) + r.payment_cash;
+      revenueByOutlet[r.outlet_id] = (revenueByOutlet[r.outlet_id] || 0) + r.gross_revenue;
+    });
+    Object.keys(revenueByOutlet).forEach(oId => {
+      const revenue = revenueByOutlet[oId];
+      const cash = cashByOutlet[oId] || 0;
+      const cashRatio = revenue > 0 ? (cash / revenue) * 100 : 0;
+      if (cashRatio > 45) {
+        anomalies.push({
+          id: `pos-${oId}`, type: 'POS Cash Mismatch', severity: cashRatio > 60 ? 'Critical' : 'High',
+          description: `Outlet ${oId}: ${cashRatio.toFixed(1)}% cash dependency detected. Possible manual override or void pattern.`,
+          outletId: parseInt(oId), escalated: false, timestamp: new Date().toISOString().slice(0, 10),
+          action: 'Pull POS void logs, verify cash drawer counts against daily settlement report.',
+        });
+      }
+    });
+
+    // Critical inventory shortages
+    const criticalInv = inventoryRows.filter(i => i.status === 'Critical');
+    if (criticalInv.length > 0) {
+      anomalies.push({
+        id: 'inventory-critical', type: 'Critical Stock Shortage', severity: 'High',
+        description: `${criticalInv.length} item(s) at critical stock level across the franchise network. Potential service disruption risk.`,
+        outletId: null, escalated: false, timestamp: new Date().toISOString().slice(0, 10),
+        action: 'Trigger emergency purchase order. Contact primary supplier immediately.',
+      });
+    }
+
+    // Staffing certification gaps
+    if (staffRows.length > 0) {
+      anomalies.push({
+        id: 'staff-cert', type: 'Staff Certification Gap', severity: staffRows.length > 5 ? 'Critical' : 'High',
+        description: `${staffRows.length} staff member(s) with performance rating below certification threshold (< 3.5/5.0).`,
+        outletId: null, escalated: false, timestamp: new Date().toISOString().slice(0, 10),
+        action: 'Schedule mandatory re-training sessions. Restrict unsupervised shifts for flagged staff.',
+      });
+    }
+
+    // Unresolved high-priority incidents
+    if (incidents.length > 0) {
+      anomalies.push({
+        id: 'incidents-open', type: 'Open Critical Incidents', severity: incidents.some(i => i.priority === 'Critical') ? 'Critical' : 'High',
+        description: `${incidents.length} open incident(s) with Critical/High priority require immediate resolution.`,
+        outletId: null, escalated: false, timestamp: new Date().toISOString().slice(0, 10),
+        action: 'Review incident tickets. Assign resolution owners with 24-hour SLA for critical items.',
+      });
+    }
+
+    anomalies.sort((a, b) => {
+      const order = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+      return (order[a.severity] || 3) - (order[b.severity] || 3);
+    });
+
+    res.json({ anomalies, summary: {
+      total: anomalies.length,
+      critical: anomalies.filter(a => a.severity === 'Critical').length,
+      high: anomalies.filter(a => a.severity === 'High').length,
+    }});
+  } catch (error) {
+    console.error('Error computing audit anomalies:', error);
+    res.status(500).json({ error: 'Server error computing audit anomalies' });
   }
 });
 
@@ -748,3 +1419,4 @@ app.post('/api/marketing/schedules', authenticateToken, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`FranchiseOps AI Server running on port ${PORT}`);
 });
+

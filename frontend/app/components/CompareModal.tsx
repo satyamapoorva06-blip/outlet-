@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import api from "../lib/api";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
 
 interface CompareItem {
   id: number;
@@ -42,24 +42,26 @@ export default function CompareModal({ isOpen, onClose, selectedLocationIds }: C
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchComparison = useCallback(async () => {
+  useEffect(() => {
+    if (isOpen && selectedLocationIds.length > 0) {
+      fetchComparison();
+    }
+  }, [isOpen, selectedLocationIds]);
+
+  const fetchComparison = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(`/outlets/compare?ids=${selectedLocationIds.join(",")}`);
+      const res = await axios.get(
+        `http://localhost:5000/api/outlets/compare?ids=${selectedLocationIds.join(",")}`
+      );
       setData(res.data);
-    } catch {
+    } catch (err: any) {
       setError("Failed to load store comparison data");
     } finally {
       setLoading(false);
     }
-  }, [selectedLocationIds]);
-
-  useEffect(() => {
-    if (isOpen && selectedLocationIds.length > 0) {
-      void fetchComparison();
-    }
-  }, [fetchComparison, isOpen, selectedLocationIds.length]);
+  };
 
   if (!isOpen) return null;
 
