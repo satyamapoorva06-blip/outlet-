@@ -128,6 +128,7 @@ export default function SignInPage() {
 
       if (typeof window !== "undefined") {
         localStorage.setItem("franchiseOpsUser", JSON.stringify(userObj));
+        document.cookie = "fo_token=demo_auth_token_xyz; path=/; max-age=864000";
       }
 
       setIsLoading(false);
@@ -155,6 +156,7 @@ export default function SignInPage() {
 
       if (typeof window !== "undefined") {
         localStorage.setItem("franchiseOpsUser", JSON.stringify(userObj));
+        document.cookie = "fo_token=demo_auth_token_xyz; path=/; max-age=864000";
       }
 
       setIsLoading(false);
@@ -188,6 +190,7 @@ export default function SignInPage() {
 
       if (typeof window !== "undefined") {
         localStorage.setItem("franchiseOpsUser", JSON.stringify(userObj));
+        document.cookie = "fo_token=demo_auth_token_xyz; path=/; max-age=864000";
       }
 
       setIsLoading(false);
@@ -212,6 +215,7 @@ export default function SignInPage() {
       };
       if (typeof window !== "undefined") {
         localStorage.setItem("franchiseOpsUser", JSON.stringify(userObj));
+        document.cookie = "fo_token=demo_auth_token_xyz; path=/; max-age=864000";
       }
       router.push("/");
     }, 700);

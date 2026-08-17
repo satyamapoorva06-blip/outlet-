@@ -34,7 +34,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Check for auth token in cookies
-  const token = request.cookies.get("fo_token")?.value;
+  const token = request.cookies.get("fo_token")?.value || request.cookies.get("franchiseops_token")?.value;
 
   if (!token) {
     const loginUrl = new URL("/login", request.url);
