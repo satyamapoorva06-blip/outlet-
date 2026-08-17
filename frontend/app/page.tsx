@@ -1,143 +1,58 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import Link from "next/link";
-import axios from "axios";
-import MapComponent from "./components/MapComponent";
-import CompareModal from "./components/CompareModal";
+import React, { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import api from "./lib/api";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  Legend,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Cell
+  ResponsiveContainer
 } from "recharts";
-
-// ─── Interfaces & Types ───────────────────────────────────────────────────────
-interface UserState {
-  name: string;
-  email: string;
-  role?: string;
-  method?: string;
-  avatar?: string;
-}
-
-interface InventoryItem {
-  id: number;
-  name: string;
-  category: string;
-  stock: number;
-  reorderPoint: number;
-  weeklySales: number;
-  daysInStock: number;
-  unitPrice: number;
-  status: "Overstock" | "Optimal" | "Low stock";
-  recommendedDiscount: number;
-  applied: boolean;
-}
-
-interface AiInsight {
-  title: string;
-  value: string;
-  subtext: string;
-  tag: string;
-  tagColor: string;
-  icon: "TrendUp" | "TrendDown" | "Stable" | "Warning" | "Sparkle";
-}
-
-interface AttendanceRecord {
-  date: string;
-  shift: string;
-  clockIn: string;
-  clockOut: string;
-  totalHours: number;
-  status: "Present" | "Late" | "Absent" | "Half Day";
-  bonusEarned: number;
-  deduction: number;
-  deductionReason?: string;
-}
-
-interface Worker {
-  id: number;
-  name: string;
-  employeeId: string;
-  role: string;
-  outletName: string;
-  phone: string;
-  email: string;
-  avatar: string;
-  baseSalary: number;
-  bonus: number;
-  salaryCut: number;
-  salaryCutReason: string;
-  clockIn: string;
-  clockOut: string;
-  status: "Present" | "Late" | "Absent" | "Half Day" | "Off";
-  attendanceHistory: AttendanceRecord[];
-}
-
-const BACKEND_URL = "http://localhost:5000/api";
+import MapComponent from "./components/MapComponent";
+import CompareModal from "./components/CompareModal";
+import AuthModal from "./components/AuthModal";
+import { useAuth } from "./context/AuthContext";
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const Icons = {
   Workflow: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
     </svg>
   ),
   Trend: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
     </svg>
   ),
   Database: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s-8 1.79-8-4" />
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
     </svg>
   ),
   Check: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
-  Inventory: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+  Alert: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
     </svg>
   ),
-  Staff: () => (
+  Location: () => (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  ),
-  Marketing: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-    </svg>
-  ),
-  Audit: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-    </svg>
-  ),
-  Intelligence: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-    </svg>
-  ),
-  Recommend: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-    </svg>
-  ),
-  Dashboard: () => (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   ),
   ChevronLeft: () => (
@@ -150,53 +65,102 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
     </svg>
   ),
-  TrendUp: () => (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 17l9.2-9.2M17 17V7H7" />
-    </svg>
-  ),
-  TrendDown: () => (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 7l-9.2 9.2M7 7v10h10" />
-    </svg>
-  ),
-  Stable: () => (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14" />
-    </svg>
-  ),
-  Warning: () => (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" />
+  Brain: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
   ),
   Sparkle: () => (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
     </svg>
   ),
-  Menu: () => (
+  TrendUp: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17l9.2-9.2M17 17V7H7" />
+    </svg>
+  ),
+  TrendDown: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 7l-9.2 9.2M7 7v10h10" />
+    </svg>
+  ),
+  Stable: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />
+    </svg>
+  ),
+  Warning: () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" />
+    </svg>
+  ),
+  Inventory: () => (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+    </svg>
+  ),
+  Staff: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+  Marketing: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+    </svg>
+  ),
+  Audit: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  ),
+  Intelligence: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  ),
+  Recommend: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 003.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+    </svg>
+  ),
+  Dashboard: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+    </svg>
+  ),
+  User: () => (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
   ),
 };
 
-// ─── 10 Workflow Steps Metadata ───────────────────────────────────────────────
 const WORKFLOW_STEPS = [
-  { id: 1,  name: "Franchise Data",           icon: "Database",      category: "input",  desc: "Aggregates sales logs, inventory status, staff shifts, marketing spends, and store audit logs.", active: true },
-  { id: 2,  name: "Data Validation",          icon: "Check",         category: "process",desc: "Validates schema compliance, handles missing values, cleans transaction records, and processes inputs.", active: true },
-  { id: 3,  name: "Outlet Performance Agent", icon: "Trend",         category: "agent",  desc: "Monitors sales, runs linear regression trend forecasting, and measures operational efficiency.", active: true },
-  { id: 4,  name: "Inventory Agent",          icon: "Inventory",     category: "agent",  desc: "Tracks stock cover, detects overstock vs low stock, and automates reorder POs.", active: true },
-  { id: 5,  name: "Staff & Attendance Agent", icon: "Staff",         category: "agent",  desc: "Tracks daily working start/end times, attendance history, salary cuts, bonuses & worker profiles.", active: true },
-  { id: 6,  name: "Marketing Agent",          icon: "Marketing",     category: "agent",  desc: "Computes campaign ROI, tracks promotion conversions, and optimizes discount allocations.", active: true },
-  { id: 7,  name: "Audit Agent",              icon: "Audit",         category: "agent",  desc: "Validates compliance with brand guidelines, analyzes safety audits, and flags non-compliance.", active: true },
-  { id: 8,  name: "Franchise Intelligence",   icon: "Intelligence",  category: "engine", desc: "Fuses domain-specific insights into a centralized reasoning engine to find correlations.", active: true },
-  { id: 9,  name: "Business Recommendations", icon: "Recommend",     category: "engine", desc: "Generates actionable strategy recommendations for managers to reduce costs and boost sales.", active: true },
-  { id: 10, name: "Dashboard & Alerts",       icon: "Dashboard",     category: "output", desc: "Serves high-level summaries for the franchisor and triggers real-time alerts for critical anomalies.", active: true },
+  { id: 1,  name: "Franchise Data",           icon: "Database",      category: "input",  desc: "Aggregates sales logs, inventory status, staff shifts, marketing spends, and store audit logs.", active: false },
+  { id: 2,  name: "Data Validation",          icon: "Check",         category: "process",desc: "Validates schema compliance, handles missing values, cleans transaction records, and processes inputs.", active: false },
+  { id: 3,  name: "Outlet Performance Agent", icon: "Trend",         category: "agent",  desc: "Monitors sales, health scores, map location comparisons, and identifies underperforming stores.", active: true },
+  { id: 4,  name: "Inventory Agent",          icon: "Inventory",     category: "agent",  desc: "Tracks stock levels, calculates depletion rates, predicts stockouts, and automates replenishment.", active: false },
+  { id: 5,  name: "Staff Agent",              icon: "Staff",         category: "agent",  desc: "Analyzes staff efficiency, generates automated shifts, and optimizes staffing against sales trends.", active: false },
+  { id: 6,  name: "Marketing Agent",          icon: "Marketing",     category: "agent",  desc: "Computes campaign ROI, tracks promotion conversions, and optimizes discount allocations.", active: false },
+  { id: 7,  name: "Audit Agent",              icon: "Audit",         category: "agent",  desc: "Validates compliance with brand guidelines, analyzes safety audits, and flags non-compliance.", active: false },
+  { id: 8,  name: "Franchise Intelligence",   icon: "Intelligence",  category: "engine", desc: "Fuses domain-specific insights into a centralized reasoning engine to find correlations.", active: false },
+  { id: 9,  name: "Business Recommendations", icon: "Recommend",     category: "engine", desc: "Generates actionable strategy recommendations for managers to reduce costs and boost sales.", active: false },
+  { id: 10, name: "Dashboard & Alerts",       icon: "Dashboard",     category: "output", desc: "Serves high-level summaries for the franchisor and triggers real-time alerts for critical anomalies.", active: false },
 ];
 
-// ─── Mathematical Analysis Engine Helpers ─────────────────────────────────────
+// Base URL is configured in lib/api.ts
+
+interface AiInsight {
+  title: string;
+  value: string;
+  subtext: string;
+  tag: string;
+  tagColor: string;
+  icon: "TrendUp" | "TrendDown" | "Stable" | "Warning" | "Sparkle";
+}
+
 function computeLinearRegressionSlope(values: number[]): number {
   const n = values.length;
   if (n < 2) return 0;
@@ -219,2602 +183,3661 @@ function computeCV(values: number[]): number {
   return (Math.sqrt(variance) / mean) * 100;
 }
 
-function computeAiInsights(trendsData: any[], salesRecords: any[], outletName: string): AiInsight[] {
+function computeAiInsights(
+  trendsData: any[],
+  salesRecords: any[],
+  outletName: string
+): AiInsight[] {
   if (trendsData.length < 3) return [];
-  const revenues = trendsData.map((d: any) => d.grossRevenue as number);
-  const profits  = trendsData.map((d: any) => d.netProfit    as number);
-  const margins  = trendsData.map((d: any) => d.grossRevenue > 0 ? (d.netProfit / d.grossRevenue) * 100 : 0);
 
+  const revenues = trendsData.map((d: any) => d.grossRevenue as number);
   const insights: AiInsight[] = [];
   const n = revenues.length;
 
-  // 1. Linear Regression Revenue Slope
   const revenueSlope = computeLinearRegressionSlope(revenues);
   const slopePercent = revenues[0] > 0 ? (revenueSlope / revenues[0]) * 100 : 0;
-  const momentumLabel = slopePercent > 1.5 ? "Strong Uptrend" : slopePercent > -1.5 ? "Stable Trend" : "Declining Trend";
+  const momentumLabel =
+    slopePercent >  1.5 ? "Strong Uptrend"  :
+    slopePercent > -1.5 ? "Stable Trend"    : "Declining Trend";
+  const momentumIcon: AiInsight["icon"] =
+    slopePercent >  1.5 ? "TrendUp"  :
+    slopePercent > -1.5 ? "Stable"   : "TrendDown";
+  const momentumColor =
+    slopePercent >  1.5 ? "bg-emerald-100 text-emerald-700" :
+    slopePercent > -1.5 ? "bg-blue-100 text-blue-700"       : "bg-red-100 text-red-700";
+
   insights.push({
-    title: "Revenue Momentum",
-    value: `${slopePercent >= 0 ? "+" : ""}${slopePercent.toFixed(2)}% / day`,
-    subtext: `Linear regression slope β₁ = ₹${revenueSlope.toFixed(0)}/day across ${n} days. ${momentumLabel} for ${outletName}.`,
-    tag: momentumLabel,
-    tagColor: slopePercent > 1.5 ? "bg-emerald-100 text-emerald-800" : slopePercent > -1.5 ? "bg-blue-100 text-blue-800" : "bg-red-100 text-red-800",
-    icon: slopePercent > 1.5 ? "TrendUp" : slopePercent > -1.5 ? "Stable" : "TrendDown",
+    title:    "Revenue Momentum",
+    value:    `${slopePercent >= 0 ? "+" : ""}${slopePercent.toFixed(2)}% / day`,
+    subtext:  `Linear regression slope β₁ = ₹${revenueSlope.toFixed(0)}/day across ${n} days. ${momentumLabel} detected for ${outletName}.`,
+    tag:      momentumLabel,
+    tagColor: momentumColor,
+    icon:     momentumIcon,
   });
 
-  // 2. Coefficient of Variation (Volatility)
-  const cv = computeCV(revenues);
-  const volatilityLabel = cv < 10 ? "Low Volatility" : cv < 25 ? "Moderate Volatility" : "High Volatility";
+  const revCV = computeCV(revenues);
+  const stabilityLabel = revCV < 15 ? "Low Volatility" : revCV < 30 ? "Moderate Fluctuation" : "High Variance";
+  const stabilityColor = revCV < 15 ? "bg-emerald-100 text-emerald-700" : revCV < 30 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700";
   insights.push({
-    title: "Revenue Volatility (CV)",
-    value: `${cv.toFixed(1)}%`,
-    subtext: `Coefficient of Variation (σ/μ × 100) is ${cv.toFixed(1)}%, indicating ${volatilityLabel.toLowerCase()} in daily sales.`,
-    tag: volatilityLabel,
-    tagColor: cv < 10 ? "bg-emerald-100 text-emerald-800" : cv < 25 ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800",
-    icon: cv < 10 ? "Stable" : cv < 25 ? "Warning" : "TrendDown",
+    title:    "Sales Stability (CV)",
+    value:    `${revCV.toFixed(1)}% CV`,
+    subtext:  `Coefficient of variation σ/μ = ${revCV.toFixed(1)}%. Lower score indicates predictable store demand pattern.`,
+    tag:      stabilityLabel,
+    tagColor: stabilityColor,
+    icon:     revCV < 15 ? "Sparkle" : "Warning",
   });
 
-  // 3. Period-over-Period Growth
   const half = Math.floor(n / 2);
-  const firstHalfAvg  = revenues.slice(0, half).reduce((a, b) => a + b, 0) / (half || 1);
-  const secondHalfAvg = revenues.slice(half).reduce((a, b) => a + b, 0) / (revenues.slice(half).length || 1);
-  const momGrowth = firstHalfAvg > 0 ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100 : 0;
+  const h1Rev = revenues.slice(0, half).reduce((a, b) => a + b, 0);
+  const h2Rev = revenues.slice(half).reduce((a, b) => a + b, 0);
+  const momGrowth = h1Rev > 0 ? ((h2Rev - h1Rev) / h1Rev) * 100 : 0;
   insights.push({
-    title: "Period-over-Period Growth",
-    value: `${momGrowth >= 0 ? "+" : ""}${momGrowth.toFixed(1)}%`,
-    subtext: `Compares first half avg (₹${firstHalfAvg.toFixed(0)}) vs second half avg (₹${secondHalfAvg.toFixed(0)}).`,
-    tag: momGrowth > 2 ? "Growing" : momGrowth < -2 ? "Declining" : "Flat",
-    tagColor: momGrowth > 2 ? "bg-emerald-100 text-emerald-800" : momGrowth < -2 ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800",
-    icon: momGrowth > 2 ? "TrendUp" : momGrowth < -2 ? "TrendDown" : "Stable",
-  });
-
-  // 4. Profit Margin Drift
-  const marginSlope = computeLinearRegressionSlope(margins);
-  const avgMargin   = margins.reduce((a, b) => a + b, 0) / (margins.length || 1);
-  const marginDrift = marginSlope * n;
-  insights.push({
-    title: "Profit Margin Drift",
-    value: `${avgMargin.toFixed(1)}% avg margin`,
-    subtext: `Margin slope = ${marginSlope >= 0 ? "+" : ""}${marginSlope.toFixed(3)} pp/day. Net shift: ${marginDrift >= 0 ? "+" : ""}${marginDrift.toFixed(1)} pp.`,
-    tag: marginDrift > 0.5 ? "Improving" : marginDrift < -0.5 ? "Eroding" : "Stable",
-    tagColor: marginDrift > 0.5 ? "bg-emerald-100 text-emerald-800" : marginDrift < -0.5 ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800",
-    icon: marginDrift > 0.5 ? "TrendUp" : marginDrift < -0.5 ? "TrendDown" : "Stable",
-  });
-
-  // 5. Peak Revenue Day (Z-Score)
-  const mean = revenues.reduce((a, b) => a + b, 0) / (n || 1);
-  const std  = Math.sqrt(revenues.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n || 1));
-  let peakIdx = 0, peakZ = -Infinity;
-  revenues.forEach((v, i) => {
-    const z = std > 0 ? (v - mean) / std : 0;
-    if (z > peakZ) { peakZ = z; peakIdx = i; }
-  });
-  insights.push({
-    title: "Peak Revenue Outlier",
-    value: trendsData[peakIdx]?.date ?? "N/A",
-    subtext: `Z-score z = +${peakZ.toFixed(2)}. Peak gross sales of ₹${(revenues[peakIdx] || 0).toLocaleString("en-IN")} recorded.`,
-    tag: peakZ > 2 ? "Spike Outlier" : "Peak Day",
-    tagColor: peakZ > 2 ? "bg-purple-100 text-purple-800" : "bg-indigo-100 text-indigo-800",
-    icon: "Sparkle",
-  });
-
-  // 6. Cost Ratio Efficiency
-  const costRatios   = trendsData.map((d: any) => d.grossRevenue > 0 ? (d.operatingCost / d.grossRevenue) * 100 : 0);
-  const avgCostRatio = costRatios.reduce((a, b) => a + b, 0) / (costRatios.length || 1);
-  const costSlope    = computeLinearRegressionSlope(costRatios);
-  insights.push({
-    title: "Cost Efficiency Trend",
-    value: `${avgCostRatio.toFixed(1)}% of Revenue`,
-    subtext: `OpEx ratio slope = ${costSlope >= 0 ? "+" : ""}${costSlope.toFixed(3)} pp/day. ${costSlope < -0.05 ? "Costs shrinking positively." : "Cost structure steady."}`,
-    tag: costSlope < -0.05 ? "Improving" : costSlope > 0.05 ? "Rising Cost" : "Steady",
-    tagColor: costSlope < -0.05 ? "bg-emerald-100 text-emerald-800" : costSlope > 0.05 ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800",
-    icon: costSlope < -0.05 ? "TrendUp" : costSlope > 0.05 ? "TrendDown" : "Stable",
+    title:    "Period Growth (H2 vs H1)",
+    value:    `${momGrowth >= 0 ? "+" : ""}${momGrowth.toFixed(1)}%`,
+    subtext:  `Total revenue in second half of window vs first half. ${momGrowth >= 0 ? "Expansion" : "Contraction"} phase.`,
+    tag:      momGrowth >= 0 ? "Positive Growth" : "Revenue Drop",
+    tagColor: momGrowth >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700",
+    icon:     momGrowth >= 0 ? "TrendUp" : "TrendDown",
   });
 
   return insights;
 }
 
-// ─── Initial Worker Staff Seed Dataset ─────────────────────────────────────────
-const INITIAL_WORKERS: Worker[] = [
-  {
-    id: 101,
-    name: "Aarav Sharma",
-    employeeId: "EMP-BLR-041",
-    role: "Head Barista & Store Lead",
-    outletName: "Bengaluru Central",
-    phone: "+91 98450 12345",
-    email: "aarav.sharma@franchiseops.ai",
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80",
-    baseSalary: 32000,
-    bonus: 4500,
-    salaryCut: 500,
-    salaryCutReason: "Late clock-in by 45 mins on 2026-07-24 (Traffic delay)",
-    clockIn: "08:45 AM",
-    clockOut: "05:30 PM",
-    status: "Present",
-    attendanceHistory: [
-      { date: "2026-07-31", shift: "Morning (09:00 - 17:30)", clockIn: "08:45 AM", clockOut: "05:30 PM", totalHours: 8.75, status: "Present", bonusEarned: 250, deduction: 0 },
-      { date: "2026-07-30", shift: "Morning (09:00 - 17:30)", clockIn: "08:52 AM", clockOut: "05:40 PM", totalHours: 8.8, status: "Present", bonusEarned: 200, deduction: 0 },
-      { date: "2026-07-29", shift: "Morning (09:00 - 17:30)", clockIn: "08:58 AM", clockOut: "05:30 PM", totalHours: 8.5, status: "Present", bonusEarned: 300, deduction: 0 },
-      { date: "2026-07-28", shift: "Morning (09:00 - 17:30)", clockIn: "09:00 AM", clockOut: "05:30 PM", totalHours: 8.5, status: "Present", bonusEarned: 150, deduction: 0 },
-      { date: "2026-07-27", shift: "Off Day", clockIn: "--:--", clockOut: "--:--", totalHours: 0, status: "Absent", bonusEarned: 0, deduction: 0 },
-      { date: "2026-07-26", shift: "Morning (09:00 - 17:30)", clockIn: "08:50 AM", clockOut: "06:00 PM", totalHours: 9.1, status: "Present", bonusEarned: 500, deduction: 0 },
-      { date: "2026-07-25", shift: "Morning (09:00 - 17:30)", clockIn: "08:55 AM", clockOut: "05:30 PM", totalHours: 8.55, status: "Present", bonusEarned: 200, deduction: 0 },
-      { date: "2026-07-24", shift: "Morning (09:00 - 17:30)", clockIn: "09:45 AM", clockOut: "05:30 PM", totalHours: 7.75, status: "Late", bonusEarned: 0, deduction: 500, deductionReason: "Late clock-in > 45 mins" },
-    ]
-  },
-  {
-    id: 102,
-    name: "Priya Sundaram",
-    employeeId: "EMP-HYD-018",
-    role: "Shift Supervisor",
-    outletName: "Hyderabad Tech Park",
-    phone: "+91 97110 88234",
-    email: "priya.sundaram@franchiseops.ai",
-    avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80",
-    baseSalary: 38000,
-    bonus: 6200,
-    salaryCut: 0,
-    salaryCutReason: "No deductions (Perfect Attendance Record)",
-    clockIn: "09:00 AM",
-    clockOut: "06:00 PM",
-    status: "Present",
-    attendanceHistory: [
-      { date: "2026-07-31", shift: "Day (09:00 - 18:00)", clockIn: "09:00 AM", clockOut: "06:00 PM", totalHours: 9.0, status: "Present", bonusEarned: 350, deduction: 0 },
-      { date: "2026-07-30", shift: "Day (09:00 - 18:00)", clockIn: "08:55 AM", clockOut: "06:15 PM", totalHours: 9.33, status: "Present", bonusEarned: 400, deduction: 0 },
-      { date: "2026-07-29", shift: "Day (09:00 - 18:00)", clockIn: "08:50 AM", clockOut: "06:00 PM", totalHours: 9.16, status: "Present", bonusEarned: 300, deduction: 0 },
-      { date: "2026-07-28", shift: "Day (09:00 - 18:00)", clockIn: "08:58 AM", clockOut: "06:00 PM", totalHours: 9.03, status: "Present", bonusEarned: 250, deduction: 0 },
-      { date: "2026-07-27", shift: "Day (09:00 - 18:00)", clockIn: "08:50 AM", clockOut: "06:30 PM", totalHours: 9.66, status: "Present", bonusEarned: 500, deduction: 0 },
-    ]
-  },
-  {
-    id: 103,
-    name: "Rohan Varma",
-    employeeId: "EMP-MAA-009",
-    role: "Inventory & POS Cashier",
-    outletName: "Chennai Marina",
-    phone: "+91 94440 33112",
-    email: "rohan.varma@franchiseops.ai",
-    avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80",
-    baseSalary: 26000,
-    bonus: 2100,
-    salaryCut: 1200,
-    salaryCutReason: "Unexcused absence on 2026-07-25 (Half day salary cut enforced)",
-    clockIn: "09:35 AM",
-    clockOut: "06:00 PM",
-    status: "Late",
-    attendanceHistory: [
-      { date: "2026-07-31", shift: "Day (09:00 - 18:00)", clockIn: "09:35 AM", clockOut: "06:00 PM", totalHours: 8.41, status: "Late", bonusEarned: 0, deduction: 200, deductionReason: "Late arrival 35 mins" },
-      { date: "2026-07-30", shift: "Day (09:00 - 18:00)", clockIn: "09:05 AM", clockOut: "06:00 PM", totalHours: 8.91, status: "Present", bonusEarned: 150, deduction: 0 },
-      { date: "2026-07-29", shift: "Day (09:00 - 18:00)", clockIn: "09:00 AM", clockOut: "06:00 PM", totalHours: 9.0, status: "Present", bonusEarned: 200, deduction: 0 },
-      { date: "2026-07-28", shift: "Day (09:00 - 18:00)", clockIn: "09:12 AM", clockOut: "06:00 PM", totalHours: 8.8, status: "Present", bonusEarned: 100, deduction: 0 },
-      { date: "2026-07-25", shift: "Day (09:00 - 18:00)", clockIn: "--:--", clockOut: "--:--", totalHours: 0, status: "Absent", bonusEarned: 0, deduction: 1000, deductionReason: "Unexcused Absence" },
-    ]
-  },
-  {
-    id: 104,
-    name: "Kavya Patel",
-    employeeId: "EMP-BOM-052",
-    role: "Senior Kitchen Specialist",
-    outletName: "Mumbai Andheri",
-    phone: "+91 98200 44991",
-    email: "kavya.patel@franchiseops.ai",
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80",
-    baseSalary: 35000,
-    bonus: 5100,
-    salaryCut: 300,
-    salaryCutReason: "Uniform SOP non-compliance during audit on 2026-07-22",
-    clockIn: "08:30 AM",
-    clockOut: "05:00 PM",
-    status: "Present",
-    attendanceHistory: [
-      { date: "2026-07-31", shift: "Early (08:30 - 17:00)", clockIn: "08:30 AM", clockOut: "05:00 PM", totalHours: 8.5, status: "Present", bonusEarned: 300, deduction: 0 },
-      { date: "2026-07-30", shift: "Early (08:30 - 17:00)", clockIn: "08:25 AM", clockOut: "05:15 PM", totalHours: 8.83, status: "Present", bonusEarned: 350, deduction: 0 },
-      { date: "2026-07-29", shift: "Early (08:30 - 17:00)", clockIn: "08:30 AM", clockOut: "05:00 PM", totalHours: 8.5, status: "Present", bonusEarned: 250, deduction: 0 },
-    ]
-  },
-  {
-    id: 105,
-    name: "Vikram Joshi",
-    employeeId: "EMP-PUN-023",
-    role: "Store Operations Assistant",
-    outletName: "Pune Hinjawadi",
-    phone: "+91 99220 77123",
-    email: "vikram.joshi@franchiseops.ai",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80",
-    baseSalary: 28000,
-    bonus: 1800,
-    salaryCut: 0,
-    salaryCutReason: "No deductions recorded",
-    clockIn: "10:00 AM",
-    clockOut: "07:00 PM",
-    status: "Present",
-    attendanceHistory: [
-      { date: "2026-07-31", shift: "Late Shift (10:00 - 19:00)", clockIn: "10:00 AM", clockOut: "07:00 PM", totalHours: 9.0, status: "Present", bonusEarned: 200, deduction: 0 },
-      { date: "2026-07-30", shift: "Late Shift (10:00 - 19:00)", clockIn: "09:55 AM", clockOut: "07:10 PM", totalHours: 9.25, status: "Present", bonusEarned: 250, deduction: 0 },
-    ]
-  }
-];
+export default function OperationsDashboard() {
+  const [activeStepId, setActiveStepId] = useState<number>(3);
+  const [outlets, setOutlets] = useState<any[]>([]);
+  const [selectedOutlet, setSelectedOutlet] = useState<string>("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
-// ─────────────────────────────────────────────────────────────────────────────
-export default function Home() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedStep, setSelectedStep] = useState(5); // Default to Worker Attendance / Staff Agent
-  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [performanceSubTab, setPerformanceSubTab] = useState<"overview" | "map" | "health" | "underperforming" | "logs">("overview");
+  const [inventorySubTab, setInventorySubTab] = useState<"roster" | "ai" | "reorders">("roster");
+  const [staffSubTab, setStaffSubTab] = useState<"roster" | "ai" | "shifts" | "performers" | "underperformers" | "allocate">("roster");
+  const [intelligenceSubTab, setIntelligenceSubTab] = useState<"overview" | "health" | "risks" | "opportunities" | "recommendations">("overview");
 
-  // Live Clock & Command Palette States
-  const [currentTime, setCurrentTime] = useState("");
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
-
-  // GIS Map & Outlet Compare States
-  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([1, 2]);
-  const [compareModalOpen, setCompareModalOpen] = useState(false);
-
-  const toggleSelectLocation = (id: number) => {
-    setSelectedLocationIds(prev => 
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
-  };
-
-  const mapLocations = useMemo(() => [
-    { id: 1, name: "FranchiseOps - Bengaluru Central", manager: "Rajesh Kumar", address: "MG Road, Brigade Corridor", city: "Bengaluru", state: "Karnataka", latitude: 12.9716, longitude: 77.5946, metrics: { revenue: 1480000, profit: 660000, orders: 4820, avgAov: "₹307.05", profitMargin: "44.6%", stockAlerts: 0, staffCount: 12 }, healthScore: 96, statusTag: "Optimal" as const },
-    { id: 2, name: "FranchiseOps - Hyderabad Tech Park", manager: "Priya Sharma", address: "HITEC City Phase 2", city: "Hyderabad", state: "Telangana", latitude: 17.3850, longitude: 78.4867, metrics: { revenue: 1620000, profit: 710000, orders: 5310, avgAov: "₹305.08", profitMargin: "43.8%", stockAlerts: 2, staffCount: 14 }, healthScore: 78, statusTag: "Warning" as const },
-    { id: 3, name: "FranchiseOps - Chennai Marina", manager: "Karthik Raja", address: "Anna Salai, Marina Bay", city: "Chennai", state: "Tamil Nadu", latitude: 13.0827, longitude: 80.2707, metrics: { revenue: 1150000, profit: 470000, orders: 3910, avgAov: "₹294.11", profitMargin: "40.8%", stockAlerts: 1, staffCount: 10 }, healthScore: 88, statusTag: "Healthy" as const },
-    { id: 4, name: "FranchiseOps - Mumbai Andheri", manager: "Neha Kapoor", address: "Link Road, Andheri West", city: "Mumbai", state: "Maharashtra", latitude: 19.0760, longitude: 72.8777, metrics: { revenue: 1850000, profit: 810000, orders: 5940, avgAov: "₹311.45", profitMargin: "43.7%", stockAlerts: 0, staffCount: 16 }, healthScore: 95, statusTag: "Optimal" as const },
-    { id: 5, name: "FranchiseOps - Pune Hinjawadi", manager: "Vikram Joshi", address: "IT Park Phase 1", city: "Pune", state: "Maharashtra", latitude: 18.5204, longitude: 73.8567, metrics: { revenue: 980000, profit: 390000, orders: 3120, avgAov: "₹314.10", profitMargin: "39.8%", stockAlerts: 0, staffCount: 9 }, healthScore: 92, statusTag: "Healthy" as const },
-  ], []);
-
-  // Worker Attendance State
-  const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
-  const [selectedWorkerModal, setSelectedWorkerModal] = useState<Worker | null>(null);
-  const [staffSearch, setStaffSearch] = useState("");
-  const [staffOutletFilter, setStaffOutletFilter] = useState("all");
-  const [staffShiftFilter, setStaffShiftFilter] = useState("all");
-
-  // Filter States
-  const [selectedOutlet, setSelectedOutlet] = useState("all");
-  const [dateRange, setDateRange] = useState("30");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortConfig, setSortConfig] = useState({ key: "saleDate", direction: "desc" });
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
 
   // Data States
-  const [outlets, setOutlets] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState<any>({
-    grossRevenue: 0, operatingCost: 0, netProfit: 0, totalOrders: 0, totalCustomers: 0, averageOrderValue: 0, profitMargin: 0, paymentSplit: { cash: 0, card: 0, upi: 0 }
-  });
-  const [trendsData, setTrendsData] = useState<any[]>([]);
-  const [salesRecords, setSalesRecords] = useState<any[]>([]);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [trends, setTrends] = useState<any[]>([]);
+  const [salesList, setSalesList] = useState<any[]>([]);
+  const [mapLocations, setMapLocations] = useState<any[]>([]);
+  const [healthScores, setHealthScores] = useState<any[]>([]);
+  const [underperformingStores, setUnderperformingStores] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [isUsingFallback, setIsUsingFallback] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserState | null>(null);
+  // Page Segmentation / Pagination State for Sales Records Table
+  const [salesPage, setSalesPage] = useState<number>(1);
+  const [salesPageSize, setSalesPageSize] = useState<number>(10);
+  const [totalSalesRecords, setTotalSalesRecords] = useState<number>(0);
 
-  // Toast Notification System
-  const [toast, setToast] = useState<{ message: string; type: "success" | "info" | "warning" } | null>(null);
-  const showToast = (message: string, type: "success" | "info" | "warning" = "info") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
-  };
+  // Stock Inventory State & Pagination
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [inventoryInsights, setInventoryInsights] = useState<any>(null);
+  const [invPage, setInvPage] = useState<number>(1);
+  const [invPageSize, setInvPageSize] = useState<number>(8);
 
-  // Step 1: Live Ingestion Stream State
-  const [isSyncingDb, setIsSyncingDb] = useState(false);
-  const [isStreamingLiveEvents, setIsStreamingLiveEvents] = useState(true);
-  const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
-  const [csvRawInput, setCsvRawInput] = useState("");
-  const [liveEventsLog, setLiveEventsLog] = useState([
-    { id: 1, time: "19:18:04", text: "POS Ingestion Pipe #4: Processed Sale #99102 for ₹850.00 at Bengaluru Central", type: "pos" },
-    { id: 2, time: "19:18:01", text: "Inventory Sensor Depletion: -2.5 kg Mozzarella Cheese (Hyderabad Tech Park)", type: "inventory" },
-    { id: 3, time: "19:17:58", text: "Staff Shift Punch: Shift Started for Ritu Sharma (EMP-BEN-089) at 08:30 AM", type: "shift" },
-    { id: 4, time: "19:17:52", text: "Zomato Marketing Webhook: +1 Promo Conversion recorded (Code: MONSOON20)", type: "marketing" },
-  ]);
+  // Staff Agent State & Pagination
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [staffInsights, setStaffInsights] = useState<any>(null);
+  const [staffPerformers, setStaffPerformers] = useState<any>(null);
+  const [staffPage, setStaffPage] = useState<number>(1);
+  const [staffPageSize, setStaffPageSize] = useState<number>(8);
 
-  // Step 3: Sales Entry Modal State
-  const [showRecordSalesModal, setShowRecordSalesModal] = useState(false);
-  const [newSalesForm, setNewSalesForm] = useState({
-    outletId: "1",
-    saleDate: new Date().toISOString().slice(0, 10),
-    grossRevenue: "45000",
-    operatingCost: "24000",
-    totalOrders: "210",
-    customerCount: "250"
-  });
+  // Job Allocation State
+  const [allocatingStaffId, setAllocatingStaffId] = useState<number | null>(null);
+  const [allocatingJob, setAllocatingJob] = useState<string>("");
+  const [allocatingShift, setAllocatingShift] = useState<string>("");
+  const [allocatingLoginTime, setAllocatingLoginTime] = useState<string>("");
+  const [allocatingLogoffTime, setAllocatingLogoffTime] = useState<string>("");
+  const [allocationSuccess, setAllocationSuccess] = useState<string | null>(null);
 
-  // Step 5: Worker Clock In & Registration Modals
-  const [showClockInModal, setShowClockInModal] = useState(false);
-  const [clockInForm, setClockInForm] = useState({
-    workerId: 101,
-    status: "Present" as "Present" | "Late" | "Absent" | "Half Day",
-    clockIn: "08:45 AM",
-    clockOut: "05:30 PM",
-    deduction: "0",
-    deductionReason: ""
-  });
+  // Marketing Agent States
+  const [marketingSubTab, setMarketingSubTab] = useState<"overview" | "powerbi" | "ai" | "recommendations">("overview");
+  const [marketingKpis, setMarketingKpis] = useState<any>(null);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [aiSegments, setAiSegments] = useState<any>(null);
+  const [aiSentiment, setAiSentiment] = useState<any>(null);
+  const [aiForecast, setAiForecast] = useState<any[]>([]);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [predictBudget, setPredictBudget] = useState<number>(25000);
+  const [predictChannel, setPredictChannel] = useState<string>("Social Media");
+  const [predictionResult, setPredictionResult] = useState<any>(null);
+  const [applyingRecId, setApplyingRecId] = useState<number | null>(null);
+  const [rerunningAi, setRerunningAi] = useState<boolean>(false);
 
-  const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
-  const [newWorkerForm, setNewWorkerForm] = useState({
-    name: "",
-    role: "Barista & Cashier",
-    outletName: "Bengaluru Central",
-    phone: "+91 98765 43210",
-    email: "",
-    baseSalary: "28000",
-    bonus: "2000"
-  });
+  // Audit Agent States
+  const [auditSubTab, setAuditSubTab] = useState<"sessions" | "checklist" | "inventory" | "pos" | "shifts" | "incidents" | "anomalies" | "report">("sessions");
+  const [auditSessions, setAuditSessions] = useState<any[]>([]);
+  const [auditInventoryVariance, setAuditInventoryVariance] = useState<any>(null);
+  const [auditPosDiscrepancies, setAuditPosDiscrepancies] = useState<any>(null);
+  const [auditShiftVerification, setAuditShiftVerification] = useState<any>(null);
+  const [auditIncidents, setAuditIncidents] = useState<any>(null);
+  const [auditAnomalies, setAuditAnomalies] = useState<any>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [activeAuditSessionId, setActiveAuditSessionId] = useState<number | null>(null);
+  const [activeAuditSession, setActiveAuditSession] = useState<any>(null);
+  const [auditSessionLoading, setAuditSessionLoading] = useState(false);
+  const [newAuditForm, setNewAuditForm] = useState({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+  const [creatingAudit, setCreatingAudit] = useState(false);
+  const [checklistUpdating, setChecklistUpdating] = useState<number | null>(null);
 
-  // Step 6: Marketing & Scenario Simulator State
-  const [showMarketingModal, setShowMarketingModal] = useState(false);
-  const [simulatedMarketingBudget, setSimulatedMarketingBudget] = useState(25000);
-  const [marketingCampaigns, setMarketingCampaigns] = useState([
-    { id: 1, name: "Weekend Monsoon Combo Offer", channel: "Zomato & Swiggy Promo", budget: 15000, spend: 11200, conversions: 430, revenueGenerated: 68800, roi: "514%", status: "Active" },
-    { id: 2, name: "Local Office Park Geofence Ad", channel: "Google Local Ads", budget: 20000, spend: 18500, conversions: 620, revenueGenerated: 99200, roi: "436%", status: "Active" },
-    { id: 3, name: "Student Loyalty Discount Card", channel: "In-Store QR Code", budget: 5000, spend: 3200, conversions: 290, revenueGenerated: 34800, roi: "987%", status: "Completed" },
-  ]);
-  const [newMarketingForm, setNewMarketingForm] = useState({ name: "", channel: "Google Ads", budget: "15000" });
+  // Intelligence Engine States
+  const [intelligenceConsolidated, setIntelligenceConsolidated] = useState<any>(null);
+  const [intelligenceHealthScores, setIntelligenceHealthScores] = useState<any[]>([]);
+  const [intelligenceRisks, setIntelligenceRisks] = useState<any>(null);
+  const [intelligenceOpportunities, setIntelligenceOpportunities] = useState<any>(null);
+  const [intelligenceRecommendations, setIntelligenceRecommendations] = useState<any>(null);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
 
-  // Step 7: Audit State
-  const [showAuditModal, setShowAuditModal] = useState(false);
-  const [storeAudits, setStoreAudits] = useState([
-    { id: 1, outletName: "Bengaluru Central", auditDate: "2026-07-28", auditor: "Ananya Roy", hygieneScore: 98, safetyScore: 96, uniformSopScore: 94, totalScore: 96, status: "Passed", notes: "Excellent kitchen cleanliness and temperature control logs." },
-    { id: 2, outletName: "Hyderabad Tech Park", auditDate: "2026-07-26", auditor: "Suresh Menon", hygieneScore: 92, safetyScore: 90, uniformSopScore: 88, totalScore: 90, status: "Passed with Advisory", notes: "Minor delay in staff uniform inspection records." },
-    { id: 3, outletName: "Chennai Marina", auditDate: "2026-07-24", auditor: "Ananya Roy", hygieneScore: 85, safetyScore: 88, uniformSopScore: 82, totalScore: 85, status: "Re-Audit Scheduled", notes: "Refrigeration logs missing 1 morning entry." },
-  ]);
-  const [newAuditForm, setNewAuditForm] = useState({ outletName: "Bengaluru Central", auditor: "Lead Auditor", hygieneScore: "95", safetyScore: "92", uniformSopScore: "94", notes: "Routine store inspection passed." });
+  // Intelligence Health Score Simulator States
+  const [simulatedOutletId, setSimulatedOutletId] = useState<number | null>(null);
+  const [simulatedRevenue, setSimulatedRevenue] = useState<number>(500000);
+  const [simulatedMargin, setSimulatedMargin] = useState<number>(20);
+  const [simulatedStockIssues, setSimulatedStockIssues] = useState<number>(0);
+  const [simulatedStaffRating, setSimulatedStaffRating] = useState<number>(4.0);
+  const [simulatedAuditScore, setSimulatedAuditScore] = useState<number>(75);
+  const [simulatedOrders, setSimulatedOrders] = useState<number>(2500);
 
-  // Step 8: AI Scenario Simulator
-  const [simulatedRainImpact, setSimulatedRainImpact] = useState(15);
 
-  // Step 9: Strategy Recommendations State
-  const [strategyCategoryFilter, setStrategyCategoryFilter] = useState("all");
-  const [strategyRecommendations, setStrategyRecommendations] = useState([
-    { id: 1, title: "Shift Baristas to Morning Peak Rush", outlet: "Bengaluru Central", category: "Labor Efficiency", impact: "+₹14,500/week", confidence: "94%", desc: "Move 2 staff members from 14:00 slow shift to 08:30 morning peak to reduce queue times.", applied: false },
-    { id: 2, title: "Automate Reorder for Espresso Beans", outlet: "All Outlets", category: "Inventory Cover", impact: "Zero Stockouts", confidence: "98%", desc: "Set auto-reorder threshold to 30kg based on 8.5kg/day burn velocity.", applied: true },
-    { id: 3, title: "Launch Weekend Combo Promo in Chennai", outlet: "Chennai Marina", category: "Revenue Growth", impact: "+18% Weekend Sales", confidence: "89%", desc: "Activate weekend 15% combo discount on bakery items during 16:00-19:00.", applied: false },
-  ]);
+  // UI / Modal States
+  const [loading, setLoading] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([]);
 
-  // Step 10: System Alerts State
-  const [alertFilter, setAlertFilter] = useState("all");
-  const [systemAlerts, setSystemAlerts] = useState([
-    { id: 101, level: "critical", title: "Mozzarella Cheese Deficit (< 10%)", desc: "Stock depleted to 4.2 kg at Hyderabad Tech Park outlet.", outlet: "Hyderabad Tech Park", resolved: false },
-    { id: 102, level: "warning", title: "Staff Late Clock-in Cluster Detected", desc: "3 workers recorded > 30 min delays this week in Chennai Marina.", outlet: "Chennai Marina", resolved: false },
-    { id: 103, level: "info", title: "Weekly Revenue Benchmark Exceeded", desc: "Bengaluru Central gross revenue reached ₹4.2L (+14% vs target).", outlet: "Bengaluru Central", resolved: false }
-  ]);
+  // ── Auth: use global context, redirect if not authenticated ──
+  const { currentUser, logout, loading: authLoading } = useAuth();
+  const router = useRouter();
 
-  // Live Digital Clock & Keyboard Shortcuts
   useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setCurrentTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + " IST · " + now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }));
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
+    if (!authLoading && !currentUser) {
+      router.replace("/login");
+    }
+  }, [authLoading, currentUser, router]);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setCommandPaletteOpen(prev => !prev);
-      }
-      if (e.key === "Escape") {
-        setCommandPaletteOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+  useEffect(() => {
+    api
+      .get("/outlets")
+      .then((res) => {
+        setOutlets(res.data);
+        if (res.data.length >= 2) {
+          setSelectedLocationIds([res.data[0].id, res.data[1].id]);
+        }
+      })
+      .catch((err) => console.error("Error loading outlets:", err));
   }, []);
 
-  // Live Telemetry Event Simulator (Step 1)
   useEffect(() => {
-    if (!isStreamingLiveEvents) return;
-    const interval = setInterval(() => {
-      const outletsArr = ["Bengaluru Central", "Hyderabad Tech Park", "Chennai Marina", "Mumbai Andheri", "Pune Hinjawadi"];
-      const randOutlet = outletsArr[Math.floor(Math.random() * outletsArr.length)];
-      const randAmount = (Math.floor(Math.random() * 800) + 250).toFixed(2);
-      const randOrder = Math.floor(Math.random() * 90000) + 10000;
-      const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      setLiveEventsLog(prev => [
-        { id: Date.now(), time: nowStr, text: `POS Telemetry Stream: Sale #${randOrder} recorded for ₹${randAmount} at ${randOutlet}`, type: "pos" },
-        ...prev.slice(0, 7)
-      ]);
-    }, 4500);
-    return () => clearInterval(interval);
-  }, [isStreamingLiveEvents]);
-
-  // Inline Actions for Workers: Approve Bonus & Waive Salary Cut
-  const handleGiveWorkerBonus = (workerId: number) => {
-    setWorkers(prev => prev.map(w => {
-      if (w.id === workerId) {
-        const bonusAmt = 1000;
-        showToast(`Approved ₹${bonusAmt.toLocaleString()} performance bonus for ${w.name}!`, "success");
-        return { ...w, bonus: w.bonus + bonusAmt };
-      }
-      return w;
-    }));
-  };
-
-  const handleWaiveSalaryCut = (workerId: number) => {
-    setWorkers(prev => prev.map(w => {
-      if (w.id === workerId) {
-        showToast(`Waived salary cut of ₹${w.salaryCut} for ${w.name}!`, "success");
-        return { ...w, salaryCut: 0, salaryCutReason: "Salary cut waived by Operations Manager" };
-      }
-      return w;
-    }));
-  };
-
-  // Handler: Export Filtered Sales to CSV
-  const exportSalesToCsv = () => {
-    if (salesRecords.length === 0) {
-      showToast("No sales records available to export.", "warning");
-      return;
-    }
-    const headers = ["ID", "Outlet Name", "City", "Sale Date", "Total Orders", "Customer Count", "Gross Revenue (INR)", "Operating Cost (INR)", "Net Profit (INR)", "Average Order Value (INR)"];
-    const rows = salesRecords.map(r => [
-      r.id, `"${r.outletName}"`, `"${r.city}"`, r.saleDate, r.totalOrders, r.customerCount, r.grossRevenue, r.operatingCost, r.netProfit, r.averageOrderValue
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `FranchiseOps_Sales_Report_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast("Sales Report CSV downloaded successfully!", "success");
-  };
-
-  // Handler: Database Sync Simulation
-  const handleDatabaseSync = () => {
-    setIsSyncingDb(true);
-    showToast("Pinging multi-source POS & IoT sensors...", "info");
-    setTimeout(() => {
-      setIsSyncingDb(false);
-      showToast("Telemetry Sync Complete: 5 Franchise Locations fully updated!", "success");
-    }, 1200);
-  };
-
-  // Handler: CSV Payload Upload
-  const handleCsvUploadSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!csvRawInput.trim()) {
-      showToast("Please enter or paste CSV content.", "warning");
-      return;
-    }
-    const lines = csvRawInput.trim().split("\n");
-    let count = 0;
-    const newRecords: any[] = [];
-    lines.forEach((line, idx) => {
-      if (idx === 0 && line.toLowerCase().includes("date")) return;
-      const parts = line.split(",");
-      if (parts.length >= 3) {
-        count++;
-        const rev = parseFloat(parts[2] || "35000");
-        const cost = parseFloat(parts[3] || "20000");
-        newRecords.push({
-          id: Date.now() + idx,
-          outletId: 1,
-          outletName: parts[0]?.trim() || "Bengaluru Central",
-          city: "Bengaluru",
-          saleDate: parts[1]?.trim() || new Date().toISOString().slice(0, 10),
-          totalOrders: parseInt(parts[4] || "180", 10),
-          customerCount: parseInt(parts[5] || "210", 10),
-          grossRevenue: rev,
-          operatingCost: cost,
-          netProfit: rev - cost,
-          averageOrderValue: 185,
-          paymentSplit: { cash: rev * 0.2, card: rev * 0.3, upi: rev * 0.5 }
-        });
-      }
-    });
-    setSalesRecords(prev => [...newRecords, ...prev]);
-    setShowCsvUploadModal(false);
-    setCsvRawInput("");
-    showToast(`Successfully ingested ${count || 1} sales telemetry records from CSV!`, "success");
-  };
-
-  // Handler: Manual Sales Entry
-  const handleRecordSalesSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const rev = parseFloat(newSalesForm.grossRevenue);
-    const cost = parseFloat(newSalesForm.operatingCost);
-    const orders = parseInt(newSalesForm.totalOrders, 10);
-    const selectedO = outlets.find(o => String(o.id) === String(newSalesForm.outletId)) || { outlet_name: "Bengaluru Central", city: "Bengaluru" };
-
-    const newRecord = {
-      id: Date.now(),
-      outletId: parseInt(newSalesForm.outletId, 10),
-      outletName: selectedO.outlet_name,
-      city: selectedO.city,
-      saleDate: newSalesForm.saleDate,
-      totalOrders: orders,
-      customerCount: parseInt(newSalesForm.customerCount, 10),
-      grossRevenue: rev,
-      operatingCost: cost,
-      netProfit: rev - cost,
-      averageOrderValue: orders > 0 ? parseFloat((rev / orders).toFixed(2)) : 0,
-      paymentSplit: { cash: rev * 0.2, card: rev * 0.3, upi: rev * 0.5 }
-    };
-
-    setSalesRecords(prev => [newRecord, ...prev]);
-    try { axios.post(`${BACKEND_URL}/sales/create`, newRecord); } catch {}
-
-    setShowRecordSalesModal(false);
-    showToast(`Recorded ₹${rev.toLocaleString("en-IN")} sales for ${selectedO.outlet_name}!`, "success");
-  };
-
-  // Handler: Clock In / Out Submit
-  const handleClockInSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const wId = clockInForm.workerId;
-    const deductionVal = parseFloat(clockInForm.deduction || "0");
-
-    setWorkers(prev => prev.map(w => {
-      if (w.id === wId) {
-        const newAttHistory = [
-          {
-            date: new Date().toISOString().slice(0, 10),
-            shift: "Day Shift (09:00 - 18:00)",
-            clockIn: clockInForm.clockIn,
-            clockOut: clockInForm.clockOut,
-            totalHours: 8.5,
-            status: clockInForm.status,
-            bonusEarned: clockInForm.status === "Present" ? 300 : 0,
-            deduction: deductionVal,
-            deductionReason: clockInForm.deductionReason
-          },
-          ...w.attendanceHistory
-        ];
-        return {
-          ...w,
-          status: clockInForm.status,
-          clockIn: clockInForm.clockIn,
-          clockOut: clockInForm.clockOut,
-          salaryCut: w.salaryCut + deductionVal,
-          salaryCutReason: clockInForm.deductionReason || w.salaryCutReason,
-          attendanceHistory: newAttHistory
-        };
-      }
-      return w;
-    }));
-
-    setShowClockInModal(false);
-    showToast(`Attendance & punch clock updated!`, "success");
-  };
-
-  // Handler: Register New Worker
-  const handleAddWorkerSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newWorkerForm.name.trim()) return;
-
-    const newW: Worker = {
-      id: Date.now(),
-      name: newWorkerForm.name,
-      employeeId: `EMP-${Math.floor(100 + Math.random() * 900)}`,
-      role: newWorkerForm.role,
-      outletName: newWorkerForm.outletName,
-      phone: newWorkerForm.phone,
-      email: newWorkerForm.email || `${newWorkerForm.name.toLowerCase().replace(" ", ".")}@franchiseops.ai`,
-      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80`,
-      baseSalary: parseFloat(newWorkerForm.baseSalary || "28000"),
-      bonus: parseFloat(newWorkerForm.bonus || "2000"),
-      salaryCut: 0,
-      salaryCutReason: "No deductions recorded",
-      clockIn: "09:00 AM",
-      clockOut: "06:00 PM",
-      status: "Present",
-      attendanceHistory: [
-        { date: new Date().toISOString().slice(0, 10), shift: "Day (09:00 - 18:00)", clockIn: "09:00 AM", clockOut: "06:00 PM", totalHours: 9.0, status: "Present", bonusEarned: 200, deduction: 0 }
-      ]
-    };
-
-    setWorkers(prev => [newW, ...prev]);
-    setShowAddWorkerModal(false);
-    setNewWorkerForm({ name: "", role: "Barista & Cashier", outletName: "Bengaluru Central", phone: "+91 98765 43210", email: "", baseSalary: "28000", bonus: "2000" });
-    showToast(`Registered new staff worker ${newW.name}!`, "success");
-  };
-
-  // Handler: Launch Marketing Campaign
-  const handleLaunchCampaignSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMarketingForm.name.trim()) return;
-
-    const b = parseFloat(newMarketingForm.budget || "10000");
-    const newCamp = {
-      id: Date.now(),
-      name: newMarketingForm.name,
-      channel: newMarketingForm.channel,
-      budget: b,
-      spend: b * 0.3,
-      conversions: Math.round(b / 30),
-      revenueGenerated: b * 4.2,
-      roi: "420%",
-      status: "Active"
-    };
-
-    setMarketingCampaigns(prev => [newCamp, ...prev]);
-    try { axios.post(`${BACKEND_URL}/marketing/create`, newCamp); } catch {}
-    setShowMarketingModal(false);
-    setNewMarketingForm({ name: "", channel: "Google Ads", budget: "15000" });
-    showToast(`Launched marketing campaign "${newCamp.name}"!`, "success");
-  };
-
-  // Handler: Log Store Audit
-  const handleLogAuditSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const h = parseInt(newAuditForm.hygieneScore, 10);
-    const s = parseInt(newAuditForm.safetyScore, 10);
-    const u = parseInt(newAuditForm.uniformSopScore, 10);
-    const avg = Math.round((h + s + u) / 3);
-
-    const newAudit = {
-      id: Date.now(),
-      outletName: newAuditForm.outletName,
-      auditDate: new Date().toISOString().slice(0, 10),
-      auditor: newAuditForm.auditor,
-      hygieneScore: h,
-      safetyScore: s,
-      uniformSopScore: u,
-      totalScore: avg,
-      status: avg >= 90 ? "Passed" : avg >= 80 ? "Passed with Advisory" : "Re-Audit Scheduled",
-      notes: newAuditForm.notes
-    };
-
-    setStoreAudits(prev => [newAudit, ...prev]);
-    try { axios.post(`${BACKEND_URL}/audits/create`, newAudit); } catch {}
-    setShowAuditModal(false);
-    showToast(`Logged store audit inspection for ${newAudit.outletName} (Score: ${avg}%)!`, "success");
-  };
-
-  // Handler: Apply Strategy Recommendation
-  const handleApplyRecommendation = (recId: number) => {
-    setStrategyRecommendations(prev => prev.map(r => r.id === recId ? { ...r, applied: true } : r));
-    try { axios.post(`${BACKEND_URL}/recommendations/apply`, { recId }); } catch {}
-    showToast(`Applied AI strategy recommendation! Operational parameters updated.`, "success");
-  };
-
-  // Handler: Resolve Alert
-  const handleResolveAlert = (alertId: number) => {
-    setSystemAlerts(prev => prev.map(a => a.id === alertId ? { ...a, resolved: true } : a));
-    showToast(`Alert resolved & archived by operator.`, "info");
-  };
-
-  // Check auth user from localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("franchiseOpsUser");
-      if (saved) {
-        try { setCurrentUser(JSON.parse(saved)); } catch {}
-      }
-    }
-  }, []);
-
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("franchiseOpsUser");
-      localStorage.removeItem("franchiseops_token");
-    }
-    setCurrentUser(null);
-  };
-
-  // Date filters
-  const dateFilters = useMemo(() => {
-    const today = new Date("2026-07-28");
-    const end = today.toISOString().slice(0, 10);
-    const start = new Date(today);
-    start.setDate(today.getDate() - parseInt(dateRange, 10));
-    return { startDate: start.toISOString().slice(0, 10), endDate: end };
-  }, [dateRange]);
-
-  // Local Seed Data Generator
-  const localMockData = useMemo(() => {
-    const mockOutlets = [
-      { id: 1, outlet_name: "FranchiseOps - Bengaluru Central", manager_name: "Rahul Sharma", city: "Bengaluru" },
-      { id: 2, outlet_name: "FranchiseOps - Hyderabad Tech Park", manager_name: "Priya Reddy", city: "Hyderabad" },
-      { id: 3, outlet_name: "FranchiseOps - Chennai Marina", manager_name: "Arjun Kumar", city: "Chennai" },
-      { id: 4, outlet_name: "FranchiseOps - Mumbai Andheri", manager_name: "Neha Patel", city: "Mumbai" },
-      { id: 5, outlet_name: "FranchiseOps - Pune Hinjawadi", manager_name: "Vikram Joshi", city: "Pune" },
-    ];
-    const today = new Date("2026-07-28");
-    const records: any[] = [];
-    mockOutlets.forEach(outlet => {
-      let seed = outlet.id;
-      const random = () => { const x = Math.sin(seed++) * 10000; return x - Math.floor(x); };
-      for (let i = 60; i >= 1; i--) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - i);
-        const dayOfWeek = date.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6 || dayOfWeek === 5;
-        let baseOrders = 150, baseAOV = 150, boost = 1.0;
-        if (outlet.city === "Bengaluru") { baseOrders = 180; baseAOV = 160; boost = isWeekend ? 1.25 : 1.0; }
-        else if (outlet.city === "Hyderabad") { baseOrders = 190; baseAOV = 145; boost = isWeekend ? 0.70 : 1.30; }
-        else if (outlet.city === "Chennai") { baseOrders = 140; baseAOV = 135; boost = isWeekend ? 1.40 : 1.0; }
-        else if (outlet.city === "Mumbai") { baseOrders = 210; baseAOV = 170; boost = isWeekend ? 1.15 : 1.0; }
-        else if (outlet.city === "Pune") { baseOrders = 150; baseAOV = 140; boost = isWeekend ? 0.80 : 1.20; }
-        const randM = 0.9 + random() * 0.2;
-        const orders = Math.round(baseOrders * boost * randM);
-        const customers = Math.round(orders * (1.1 + random() * 0.15));
-        const aov = parseFloat((baseAOV * (0.95 + random() * 0.1)).toFixed(2));
-        const revenue = parseFloat((orders * aov).toFixed(2));
-        const costPct = 0.58 + random() * 0.10;
-        const cost = parseFloat((revenue * costPct).toFixed(2));
-        const profit = parseFloat((revenue - cost).toFixed(2));
-        const upi = parseFloat((revenue * (0.50 + random() * 0.10)).toFixed(2));
-        const card = parseFloat((revenue * (0.25 + random() * 0.10)).toFixed(2));
-        const cash = parseFloat((revenue - upi - card).toFixed(2));
-        records.push({
-          id: outlet.id * 1000 + i, outletId: outlet.id, outletName: outlet.outlet_name, city: outlet.city,
-          saleDate: date.toISOString().slice(0, 10), totalOrders: orders, customerCount: customers,
-          grossRevenue: revenue, operatingCost: cost, netProfit: profit, averageOrderValue: aov,
-          paymentSplit: { cash, card, upi }
-        });
-      }
-    });
-    return { outlets: mockOutlets, records };
-  }, []);
-
-  // Fetch / Sync Data
-  useEffect(() => {
-    const fetchData = async () => {
+    if (activeStepId === 3) {
       setLoading(true);
-      const { startDate, endDate } = dateFilters;
-      const outletParam = selectedOutlet !== "all" ? `&outletId=${selectedOutlet}` : "";
+      const params = {
+        outletId: selectedOutlet,
+        startDate,
+        endDate,
+        limit: salesPageSize,
+        offset: (salesPage - 1) * salesPageSize
+      };
 
-      try {
-        const resOutlets = await axios.get(`${BACKEND_URL}/outlets`);
-        setOutlets(resOutlets.data);
-        const resSummary = await axios.get(`${BACKEND_URL}/sales/summary?startDate=${startDate}&endDate=${endDate}${outletParam}`);
-        setMetrics(resSummary.data);
-        const resTrends = await axios.get(`${BACKEND_URL}/sales/trends?startDate=${startDate}&endDate=${endDate}${outletParam}`);
-        setTrendsData(resTrends.data);
-        const resList = await axios.get(`${BACKEND_URL}/sales/list?startDate=${startDate}&endDate=${endDate}${outletParam}&limit=200`);
-        setSalesRecords(resList.data.records);
-        setIsUsingFallback(false);
-      } catch {
-        setIsUsingFallback(true);
-        setOutlets(localMockData.outlets);
-        const filtered = localMockData.records.filter(r => {
-          const inRange = r.saleDate >= startDate && r.saleDate <= endDate;
-          const matchOutlet = selectedOutlet === "all" || r.outletId === parseInt(selectedOutlet, 10);
-          return inRange && matchOutlet;
-        });
-        let grossRevenue = 0, operatingCost = 0, netProfit = 0, totalOrders = 0, totalCustomers = 0, cash = 0, card = 0, upi = 0;
-        filtered.forEach(r => {
-          grossRevenue += r.grossRevenue; operatingCost += r.operatingCost; netProfit += r.netProfit;
-          totalOrders += r.totalOrders; totalCustomers += r.customerCount;
-          cash += r.paymentSplit.cash; card += r.paymentSplit.card; upi += r.paymentSplit.upi;
-        });
-        const averageOrderValue = totalOrders > 0 ? parseFloat((grossRevenue / totalOrders).toFixed(2)) : 0;
-        const profitMargin = grossRevenue > 0 ? parseFloat(((netProfit / grossRevenue) * 100).toFixed(2)) : 0;
-        setMetrics({ grossRevenue, operatingCost, netProfit, totalOrders, totalCustomers, averageOrderValue, profitMargin, paymentSplit: { cash, card, upi } });
+      Promise.all([
+        api.get("/sales/summary", { params: { outletId: selectedOutlet, startDate, endDate } }),
+        api.get("/sales/trends", { params: { outletId: selectedOutlet, startDate, endDate } }),
+        api.get("/sales/list", { params }),
+        api.get("/outlets/locations"),
+        api.get("/outlets/health-scores"),
+        api.get("/outlets/underperforming")
+      ])
+        .then(([sumRes, trendRes, listRes, mapRes, healthRes, underRes]) => {
+          setSummary(sumRes.data);
+          setTrends(trendRes.data);
+          setSalesList(listRes.data.records);
+          setTotalSalesRecords(listRes.data.pagination.total);
+          setMapLocations(mapRes.data);
+          setHealthScores(healthRes.data);
+          setUnderperformingStores(underRes.data);
+        })
+        .catch((err) => console.error("Error fetching performance agent data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId, selectedOutlet, startDate, endDate, salesPage, salesPageSize]);
 
-        const tMap: Record<string, any> = {};
-        filtered.forEach(r => {
-          if (!tMap[r.saleDate]) tMap[r.saleDate] = { date: r.saleDate, grossRevenue: 0, operatingCost: 0, netProfit: 0, totalOrders: 0 };
-          tMap[r.saleDate].grossRevenue += r.grossRevenue;
-          tMap[r.saleDate].operatingCost += r.operatingCost;
-          tMap[r.saleDate].netProfit += r.netProfit;
-          tMap[r.saleDate].totalOrders += r.totalOrders;
-        });
-        setTrendsData(Object.values(tMap).sort((a: any, b: any) => a.date.localeCompare(b.date)));
-        setSalesRecords(filtered);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [selectedOutlet, dateFilters, localMockData]);
+  useEffect(() => {
+    if (activeStepId === 4) {
+      setLoading(true);
+      const params = { outletId: selectedOutlet };
 
-  // Formatters
-  const formatCurrency = (val: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
-  const formatNumber = (val: number) => new Intl.NumberFormat("en-IN").format(val);
+      Promise.all([
+        api.get("/inventory", { params }),
+        api.get("/inventory/agent-insights", { params })
+      ])
+        .then(([invRes, insightRes]) => {
+          setInventoryItems(invRes.data);
+          setInventoryInsights(insightRes.data);
+        })
+        .catch((err) => console.error("Error fetching inventory data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId, selectedOutlet]);
 
-  // Sorting and Pagination
-  const handleSort = (key: string) => {
-    setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc" }));
+  useEffect(() => {
+    if (activeStepId === 5) {
+      setLoading(true);
+      const params = { outletId: selectedOutlet };
+
+      Promise.all([
+        api.get("/staff", { params }),
+        api.get("/staff/agent-insights", { params }),
+        api.get("/staff/performers", { params })
+      ])
+        .then(([staffRes, insightRes, performersRes]) => {
+          setStaffMembers(staffRes.data);
+          setStaffInsights(insightRes.data);
+          setStaffPerformers(performersRes.data);
+        })
+        .catch((err) => console.error("Error fetching staff data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId, selectedOutlet]);
+
+  // Marketing Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 6) {
+      setLoading(true);
+      Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/segmentation"),
+        api.get("/marketing/ai/sentiment"),
+        api.get("/marketing/ai/forecast"),
+        api.get("/marketing/ai/recommendations")
+      ])
+        .then(([kpisRes, campaignsRes, segRes, sentRes, foreRes, recRes]) => {
+          setMarketingKpis(kpisRes.data);
+          setCampaigns(campaignsRes.data);
+          setAiSegments(segRes.data);
+          setAiSentiment(sentRes.data);
+          setAiForecast(foreRes.data);
+          setAiRecommendations(recRes.data);
+        })
+        .catch((err) => console.error("Error loading marketing data:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [activeStepId]);
+
+  // Audit Agent API Effect
+  useEffect(() => {
+    if (activeStepId === 7) {
+      setAuditLoading(true);
+      Promise.all([
+        api.get("/audit/sessions"),
+        api.get("/audit/inventory-variance"),
+        api.get("/audit/pos-discrepancies"),
+        api.get("/audit/shift-verification"),
+        api.get("/audit/incidents"),
+        api.get("/audit/anomalies"),
+      ])
+        .then(([sessRes, invRes, posRes, shiftRes, incRes, anomRes]) => {
+          setAuditSessions(sessRes.data);
+          setAuditInventoryVariance(invRes.data);
+          setAuditPosDiscrepancies(posRes.data);
+          setAuditShiftVerification(shiftRes.data);
+          setAuditIncidents(incRes.data);
+          setAuditAnomalies(anomRes.data);
+        })
+        .catch((err) => console.error("Error loading audit data:", err))
+        .finally(() => setAuditLoading(false));
+    }
+  }, [activeStepId, selectedOutlet]);
+
+  // Intelligence Engine API Effect
+  useEffect(() => {
+    if (activeStepId === 8) {
+      setIntelligenceLoading(true);
+      Promise.all([
+        api.get("/intelligence/consolidate"),
+        api.get("/intelligence/health-scores"),
+        api.get("/intelligence/risks"),
+        api.get("/intelligence/opportunities"),
+        api.get("/intelligence/recommendations"),
+      ])
+        .then(([conRes, healthRes, riskRes, oppRes, recRes]) => {
+          setIntelligenceConsolidated(conRes.data);
+          setIntelligenceHealthScores(healthRes.data);
+          setIntelligenceRisks(riskRes.data);
+          setIntelligenceOpportunities(oppRes.data);
+          setIntelligenceRecommendations(recRes.data);
+
+          if (conRes.data && conRes.data.outlets && conRes.data.outlets.length > 0) {
+            const first = conRes.data.outlets[0];
+            setSimulatedOutletId(first.outletId);
+            setSimulatedRevenue(first.agentOutputs.sales.revenue);
+            setSimulatedMargin(first.agentOutputs.sales.margin);
+            setSimulatedStockIssues(first.agentOutputs.inventory.criticalStock + first.agentOutputs.inventory.lowStock);
+            setSimulatedStaffRating(first.agentOutputs.staff.avgRating);
+            setSimulatedAuditScore(first.agentOutputs.audit.avgScore || 75);
+            setSimulatedOrders(first.agentOutputs.sales.orders);
+          }
+        })
+        .catch((err) => console.error("Error loading intelligence data:", err))
+        .finally(() => setIntelligenceLoading(false));
+    }
+  }, [activeStepId]);
+
+
+  const handleLoadAuditSession = async (sessionId: number) => {
+    setActiveAuditSessionId(sessionId);
+    setAuditSessionLoading(true);
+    try {
+      const res = await api.get(`/audit/sessions/${sessionId}`);
+      setActiveAuditSession(res.data);
+    } catch (err) {
+      console.error("Error loading session detail:", err);
+    } finally {
+      setAuditSessionLoading(false);
+    }
   };
 
-  const processedRecords = useMemo(() => {
-    let records = [...salesRecords];
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      records = records.filter(r => r.outletName.toLowerCase().includes(term) || r.city.toLowerCase().includes(term) || r.saleDate.includes(term));
+  const handleCreateAuditSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAuditForm.outletId || !newAuditForm.auditorName || !newAuditForm.auditDate) {
+      alert("Please fill in all required fields.");
+      return;
     }
-    records.sort((a, b) => {
-      const aVal = a[sortConfig.key], bVal = b[sortConfig.key];
-      if (typeof aVal === "string") return sortConfig.direction === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      return sortConfig.direction === "asc" ? aVal - bVal : bVal - aVal;
-    });
-    return records;
-  }, [salesRecords, searchTerm, sortConfig]);
+    setCreatingAudit(true);
+    try {
+      const res = await api.post("/audit/sessions", {
+        outletId: parseInt(newAuditForm.outletId, 10),
+        auditorName: newAuditForm.auditorName,
+        auditDate: newAuditForm.auditDate,
+        notes: newAuditForm.notes,
+      });
+      // Load the new session immediately
+      await handleLoadAuditSession(res.data.sessionId);
+      setAuditSubTab("checklist");
+      setNewAuditForm({ outletId: "", auditorName: "", auditDate: "", notes: "" });
+      // Refresh sessions list
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to create audit session.");
+    } finally {
+      setCreatingAudit(false);
+    }
+  };
 
-  const paginatedRecords = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return processedRecords.slice(start, start + itemsPerPage);
-  }, [processedRecords, currentPage]);
+  const handleUpdateChecklistItem = async (itemId: number, answer: string, notes?: string) => {
+    setChecklistUpdating(itemId);
+    try {
+      await api.put(`/audit/checklist-items/${itemId}`, { answer, notes });
+      if (activeAuditSession) {
+        setActiveAuditSession((prev: any) => ({
+          ...prev,
+          checklist_items: prev.checklist_items.map((item: any) =>
+            item.id === itemId ? { ...item, answer, notes: notes || item.notes } : item
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("Error updating checklist item:", err);
+    } finally {
+      setChecklistUpdating(null);
+    }
+  };
 
-  const totalPages = Math.ceil(processedRecords.length / itemsPerPage);
+  const handleCompleteAuditSession = async (sessionId: number) => {
+    try {
+      const res = await api.post(`/audit/sessions/${sessionId}/complete`, {});
+      alert(`Audit completed! Score: ${res.data.overallScore}/100 — ${res.data.passFail}`);
+      await handleLoadAuditSession(sessionId);
+      const sessRes = await api.get("/audit/sessions");
+      setAuditSessions(sessRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to complete audit session.");
+    }
+  };
 
-  const selectedOutletName = useMemo(() => {
+  const handleUpdateIncident = async (incidentId: number, status: string) => {
+    try {
+      await api.put(`/audit/incidents/${incidentId}`, {
+        status,
+        resolvedDate: status === "Resolved" ? new Date().toISOString().slice(0, 10) : null,
+      });
+      const incRes = await api.get("/audit/incidents");
+      setAuditIncidents(incRes.data);
+    } catch (err) {
+      console.error("Error updating incident:", err);
+    }
+  };
+
+  const handleApplyRecommendation = async (rec: any) => {
+    setApplyingRecId(rec.id);
+    try {
+      const res = await api.post("/marketing/recommendations/apply", {
+        reallocation_details: rec.reallocation_details,
+        campaign_id: rec.campaign_id
+      });
+      alert(res.data.message || "Recommendation applied successfully!");
+      // Reload states
+      setLoading(true);
+      const [kpisRes, campaignsRes, recRes] = await Promise.all([
+        api.get("/marketing/kpis"),
+        api.get("/marketing/campaigns"),
+        api.get("/marketing/ai/recommendations")
+      ]);
+      setMarketingKpis(kpisRes.data);
+      setCampaigns(campaignsRes.data);
+      setAiRecommendations(recRes.data);
+    } catch (err: any) {
+      console.error("Error applying recommendation:", err);
+      alert(err.response?.data?.error || "Error applying recommendation");
+    } finally {
+      setApplyingRecId(null);
+      setLoading(false);
+    }
+  };
+
+  const handlePredictCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRerunningAi(true);
+    try {
+      const res = await api.post("/marketing/ai/predict", {
+        budget: Number(predictBudget),
+        channel: predictChannel
+      });
+      setPredictionResult(res.data);
+    } catch (err: any) {
+      console.error("Error predicting campaign:", err);
+      alert("Failed to predict campaign success.");
+    } finally {
+      setRerunningAi(false);
+    }
+  };
+
+  const handleAllocateJob = async (staffId: number) => {
+    if (!allocatingJob) return;
+    try {
+      await api.put(`/staff/${staffId}/allocate-job`, {
+        assignedJob: allocatingJob,
+        shiftType: allocatingShift || undefined,
+        loginTime: allocatingLoginTime || undefined,
+        logoffTime: allocatingLogoffTime || undefined
+      });
+      setAllocationSuccess(`Job successfully allocated!`);
+      setAllocatingStaffId(null);
+      setAllocatingJob("");
+      setAllocatingShift("");
+      setAllocatingLoginTime("");
+      setAllocatingLogoffTime("");
+      // Refresh staff data
+      const params = { outletId: selectedOutlet };
+      const [staffRes, performersRes] = await Promise.all([
+        api.get("/staff", { params }),
+        api.get("/staff/performers", { params })
+      ]);
+      setStaffMembers(staffRes.data);
+      setStaffPerformers(performersRes.data);
+      setTimeout(() => setAllocationSuccess(null), 3000);
+    } catch (err) {
+      console.error("Error allocating job:", err);
+    }
+  };
+
+  const activeOutletName = useMemo(() => {
     if (selectedOutlet === "all") return "All Outlets";
-    const o = outlets.find((o: any) => String(o.id) === String(selectedOutlet));
-    return o ? o.outlet_name.replace("FranchiseOps - ", "") : "Selected Outlet";
+    const found = outlets.find((o) => o.id === parseInt(selectedOutlet, 10));
+    return found ? `${found.city} (${found.outlet_name})` : "Selected Outlet";
   }, [selectedOutlet, outlets]);
 
   const aiInsights = useMemo(() => {
-    if (loading || trendsData.length < 3) return [];
-    return computeAiInsights(trendsData, salesRecords, selectedOutletName);
-  }, [trendsData, salesRecords, loading, selectedOutletName]);
+    return computeAiInsights(trends, salesList, activeOutletName);
+  }, [trends, salesList, activeOutletName]);
 
-  // Filtered Workers for Step 5
-  const filteredWorkers = useMemo(() => {
-    return workers.filter(w => {
-      if (staffOutletFilter !== "all" && !w.outletName.toLowerCase().includes(staffOutletFilter.toLowerCase())) return false;
-      if (staffSearch.trim()) {
-        const q = staffSearch.toLowerCase();
-        const matchName = w.name.toLowerCase().includes(q);
-        const matchRole = w.role.toLowerCase().includes(q);
-        const matchEmail = w.email.toLowerCase().includes(q);
-        const matchPhone = w.phone.includes(q);
-        if (!matchName && !matchRole && !matchEmail && !matchPhone) return false;
-      }
-      return true;
+  // Franchise Health Score Simulator Memo
+  const simulatedHealthScore = useMemo(() => {
+    const financialScore  = Math.min(35, Math.max(0, (simulatedMargin / 45) * 35));
+    const revenueScore    = Math.min(10, Math.max(0, (simulatedRevenue / 1500000) * 10));
+    const inventoryScore  = Math.min(15, Math.max(0, 15 - simulatedStockIssues * 4));
+    const staffScore      = Math.min(10, Math.max(0, ((simulatedStaffRating - 3.0) / 2.0) * 10));
+    const complianceScore = Math.min(20, Math.max(0, (simulatedAuditScore / 100) * 20));
+    const orderScore      = Math.min(10, Math.max(0, (simulatedOrders / 5000) * 10));
+    const total = Math.round(financialScore + revenueScore + inventoryScore + staffScore + complianceScore + orderScore);
+    const cappedTotal = Math.min(100, Math.max(0, total));
+
+    let grade = 'F', gradeColor = 'bg-red-100 text-red-800 border-red-200';
+    if (cappedTotal >= 90)      { grade = 'A+'; gradeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200'; }
+    else if (cappedTotal >= 80) { grade = 'A';  gradeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200'; }
+    else if (cappedTotal >= 70) { grade = 'B';  gradeColor = 'bg-blue-100 text-blue-800 border-blue-200'; }
+    else if (cappedTotal >= 60) { grade = 'C';  gradeColor = 'bg-amber-100 text-amber-800 border-amber-200'; }
+    else if (cappedTotal >= 50) { grade = 'D';  gradeColor = 'bg-orange-100 text-orange-800 border-orange-200'; }
+
+    return { score: cappedTotal, grade, gradeColor };
+  }, [simulatedMargin, simulatedRevenue, simulatedStockIssues, simulatedStaffRating, simulatedAuditScore, simulatedOrders]);
+
+  // Franchise Benchmarking Outliers Memo
+  const outliers = useMemo(() => {
+    if (!intelligenceConsolidated || !intelligenceConsolidated.outlets || intelligenceConsolidated.outlets.length === 0) return null;
+    const list = intelligenceConsolidated.outlets;
+    
+    let maxRev = list[0], maxMargin = list[0], maxAudit = list[0], minHealth = list[0];
+    list.forEach((o: any) => {
+      if (o.agentOutputs.sales.revenue > maxRev.agentOutputs.sales.revenue) maxRev = o;
+      if (o.agentOutputs.sales.margin > maxMargin.agentOutputs.sales.margin) maxMargin = o;
+      if (o.agentOutputs.audit.avgScore > maxAudit.agentOutputs.audit.avgScore) maxAudit = o;
+      if (o.healthScore < minHealth.healthScore) minHealth = o;
     });
-  }, [workers, staffOutletFilter, staffSearch]);
+
+    return { maxRev, maxMargin, maxAudit, minHealth };
+  }, [intelligenceConsolidated]);
+
+  const handleToggleSelectLocation = (id: number) => {
+    setSelectedLocationIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleAuthSuccess = (user: any, token: string) => {
+    // kept for compatibility — context handles state now
+  };
+
+  const handleSignOut = () => {
+    logout();
+    router.replace("/login");
+  };
+
+  const paginatedInventoryItems = useMemo(() => {
+    const start = (invPage - 1) * invPageSize;
+    return inventoryItems.slice(start, start + invPageSize);
+  }, [inventoryItems, invPage, invPageSize]);
+
+  const totalInvPages = Math.ceil(inventoryItems.length / invPageSize) || 1;
+
+  const paginatedStaffMembers = useMemo(() => {
+    const start = (staffPage - 1) * staffPageSize;
+    return staffMembers.slice(start, start + staffPageSize);
+  }, [staffMembers, staffPage, staffPageSize]);
+
+  const totalStaffPages = Math.ceil(staffMembers.length / staffPageSize) || 1;
+
+  const totalSalesPages = Math.ceil(totalSalesRecords / salesPageSize) || 1;
+
+  // ── Auth Loading Guard ────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
+        <div className="relative">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center font-black text-white text-2xl shadow-lg shadow-indigo-500/30">
+            FO
+          </div>
+          <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-white font-semibold text-sm">Loading your workspace…</p>
+          <p className="text-slate-500 text-xs">Verifying session</p>
+        </div>
+        <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: "60%" }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-screen bg-[#f5f5f7] text-[#1d1d1f] antialiased overflow-hidden font-sans">
+    <div className="h-screen overflow-hidden bg-slate-100 flex flex-col font-sans text-slate-900">
+      {/* ─── Top Header Navbar ──────────────────────────────────────────────── */}
+      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-indigo-600 rounded-xl shadow-md text-white font-black text-xl tracking-tighter">
+              FO
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-white tracking-tight flex items-center space-x-2">
+                <span>FranchiseOps AI</span>
+                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded-full border border-indigo-500/30">
+                  Step {activeStepId} Active
+                </span>
+              </h1>
+              <p className="text-xs text-slate-400">Enterprise Operations Intelligence Dashboard</p>
+            </div>
+          </div>
 
-      {/* ── macOS Dark Zinc Sidebar Navigation ──────────────────────────────── */}
-      <aside
-        className="flex flex-col shrink-0 transition-all duration-300 ease-in-out z-20"
-        style={{ width: sidebarOpen ? "270px" : "68px", minWidth: sidebarOpen ? "270px" : "68px" }}
-      >
-        <div className="flex flex-col h-full bg-[#0c1017] text-slate-200 border-r border-white/10 shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-4 border-b border-white/10">
-            {sidebarOpen ? (
-              <div className="flex items-center space-x-2.5 overflow-hidden">
-                <div className="h-9 w-9 shrink-0 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 space-x-2">
+              <span className="text-xs text-slate-400">Outlet:</span>
+              <select
+                value={selectedOutlet}
+                onChange={(e) => {
+                  setSelectedOutlet(e.target.value);
+                  setSalesPage(1);
+                  setInvPage(1);
+                  setStaffPage(1);
+                }}
+                className="bg-transparent text-xs text-white font-medium focus:outline-none cursor-pointer"
+              >
+                <option value="all" className="bg-slate-800 text-white">All Outlets</option>
+                {outlets.map((o) => (
+                  <option key={o.id} value={o.id} className="bg-slate-800 text-white">
+                    {o.city} ({o.outlet_name})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {currentUser ? (
+              <div className="flex items-center space-x-3 bg-slate-800/80 px-3.5 py-1.5 rounded-2xl border border-slate-700">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <div className="text-xs font-bold text-white leading-none">{currentUser.name}</div>
+                  <div className="text-[10px] text-indigo-400 font-mono leading-tight">{currentUser.role}</div>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="text-xs text-slate-400 hover:text-red-400 font-medium pl-2 border-l border-slate-700 transition-colors cursor-pointer flex items-center space-x-1"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-extrabold text-white tracking-tight leading-tight">FranchiseOps</p>
-                  <p className="text-[10px] text-slate-400 font-medium">Apple-Grade AI Ops</p>
-                </div>
+                  <span>Sign Out</span>
+                </button>
               </div>
             ) : (
-              <div className="mx-auto h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-md">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
+              <button
+                onClick={() => router.push("/login")}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Icons.User />
+                <span>Sign In</span>
+              </button>
             )}
-            <button
-              onClick={() => setSidebarOpen(o => !o)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Toggle sidebar"
-            >
-              {sidebarOpen ? <Icons.ChevronLeft /> : <Icons.ChevronRight />}
-            </button>
           </div>
+        </div>
+      </header>
 
-          {/* Sidebar Search Bar */}
-          {sidebarOpen && (
-            <div className="px-3 pt-3">
-              <input
-                type="text"
-                value={sidebarSearch}
-                onChange={e => setSidebarSearch(e.target.value)}
-                placeholder="Search 10 workflow steps..."
-                className="w-full text-xs bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
+      {/* ─── Main Content Layout ───────────────────────────────────────────── */}
+      <div className="flex-1 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 h-full grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
+        {/* ── Static Sidebar: Agentic Workflow Navigation ─────────────────── */}
+        <aside className="lg:col-span-3 h-full overflow-y-auto pb-6">
+          <div
+            className="rounded-2xl overflow-hidden border border-slate-700/60 shadow-xl"
+            style={{ background: "linear-gradient(180deg, #0f172a 0%, #111827 100%)" }}
+          >
+            {/* Sidebar Header */}
+            <div className="px-4 pt-4 pb-3 border-b border-slate-700/50">
+              <div className="flex items-center space-x-2.5">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-xs shrink-0"
+                  style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)" }}
+                >
+                  FO
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-white leading-none">Agentic Pipeline</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">10-step AI workflow</p>
+                </div>
+                <div className="ml-auto flex items-center space-x-1">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                  <span className="text-[10px] text-emerald-400 font-semibold">Live</span>
+                </div>
+              </div>
             </div>
-          )}
 
-          {/* Section Label */}
-          {sidebarOpen && (
-            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400">Agent Workflow Modules</p>
-              <span className="text-[9px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">10 Active</span>
+            {/* Step Groups */}
+            {([
+              {
+                label: "Data Inputs",
+                color: "text-sky-400",
+                dot: "bg-sky-400",
+                ids: [1, 2],
+              },
+              {
+                label: "AI Agents",
+                color: "text-indigo-400",
+                dot: "bg-indigo-500",
+                ids: [3, 4, 5, 6, 7],
+              },
+              {
+                label: "Intelligence Engine",
+                color: "text-violet-400",
+                dot: "bg-violet-500",
+                ids: [8, 9],
+              },
+              {
+                label: "Output",
+                color: "text-emerald-400",
+                dot: "bg-emerald-500",
+                ids: [10],
+              },
+            ] as Array<{ label: string; color: string; dot: string; ids: number[] }>).map((group) => (
+              <div key={group.label} className="px-3 py-3">
+                {/* Group Label */}
+                <div className="flex items-center space-x-2 px-2 mb-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${group.dot}`} />
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${group.color}`}>
+                    {group.label}
+                  </span>
+                </div>
+
+                <nav className="space-y-0.5">
+                  {WORKFLOW_STEPS.filter((s) => group.ids.includes(s.id)).map((step) => {
+                    const IconComponent = (Icons as any)[step.icon] || Icons.Workflow;
+                    const isActive = activeStepId === step.id;
+
+                    return (
+                      <button
+                        key={step.id}
+                        onClick={() => setActiveStepId(step.id)}
+                        className={`w-full text-left px-2.5 py-2.5 rounded-xl transition-all duration-150 flex items-center space-x-3 cursor-pointer group relative overflow-hidden ${
+                          isActive
+                            ? "text-white"
+                            : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                        }`}
+                        style={
+                          isActive
+                            ? { background: "linear-gradient(135deg, rgba(79,70,229,0.35), rgba(124,58,237,0.20))", border: "1px solid rgba(99,102,241,0.3)" }
+                            : { border: "1px solid transparent" }
+                        }
+                      >
+                        {/* Active left accent bar */}
+                        {isActive && (
+                          <span
+                            className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full"
+                            style={{ background: "linear-gradient(180deg, #818cf8, #a78bfa)" }}
+                          />
+                        )}
+
+                        {/* Icon */}
+                        <span
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                            isActive
+                              ? "text-indigo-200"
+                              : "text-slate-500 group-hover:text-slate-300"
+                          }`}
+                          style={
+                            isActive
+                              ? { background: "rgba(99,102,241,0.25)" }
+                              : { background: "rgba(148,163,184,0.07)" }
+                          }
+                        >
+                          <span className="scale-75">
+                            <IconComponent />
+                          </span>
+                        </span>
+
+                        {/* Text */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-semibold leading-tight ${
+                              isActive ? "text-white" : "text-slate-300 group-hover:text-white"
+                            }`}>
+                              {step.name}
+                            </span>
+                            {isActive && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
+                            )}
+                          </div>
+                          <p className={`text-[10px] truncate mt-0.5 leading-tight ${
+                            isActive ? "text-indigo-300/70" : "text-slate-600"
+                          }`}>
+                            {step.desc}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            ))}
+
+            {/* Sidebar Footer */}
+            <div className="mx-3 mb-3 p-3 rounded-xl border border-slate-700/50 space-y-2" style={{ background: "rgba(15,23,42,0.6)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Active Step</span>
+                <span className="text-[10px] font-mono text-indigo-400 font-bold">#{activeStepId} / 10</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1">
+                <div
+                  className="h-1 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${(activeStepId / 10) * 100}%`,
+                    background: "linear-gradient(90deg, #4f46e5, #7c3aed)"
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-600 truncate">
+                {WORKFLOW_STEPS.find((s) => s.id === activeStepId)?.name}
+              </p>
             </div>
-          )}
+          </div>
+        </aside>
 
-          {/* Workflow Steps List */}
-          <nav className="flex-1 overflow-y-auto py-2 space-y-1 px-2.5">
-            {WORKFLOW_STEPS.filter(s => sidebarSearch.trim() === "" || s.name.toLowerCase().includes(sidebarSearch.toLowerCase()) || s.desc.toLowerCase().includes(sidebarSearch.toLowerCase())).map(step => {
-              const isSelected = selectedStep === step.id;
-              return (
+        {/* Dynamic Main Workspace Tab Content */}
+        <main className="lg:col-span-9 h-full overflow-y-auto pb-6 space-y-6">
+          {/* STEP 3: OUTLET PERFORMANCE AGENT */}
+          {activeStepId === 3 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Feature Rendering Buttons Bar (In-section feature toggle to prevent overflow!) */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
                 <button
-                  key={step.id}
-                  title={!sidebarOpen ? `Step ${step.id}: ${step.name}` : undefined}
-                  onClick={() => { setSelectedStep(step.id); setCurrentPage(1); }}
-                  className={`w-full flex items-center rounded-xl transition-all duration-200 group ${
-                    sidebarOpen ? "px-3 py-2.5 space-x-3" : "px-0 py-2.5 justify-center"
-                  } ${
-                    isSelected
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                      : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
+                  onClick={() => setPerformanceSubTab("overview")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    performanceSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
                   }`}
                 >
-                  <div className={`shrink-0 h-6 w-6 rounded-lg flex items-center justify-center text-[11px] font-extrabold border transition-all ${
-                    isSelected
-                      ? "bg-white/20 border-white/30 text-white"
-                      : "bg-slate-800/80 border-slate-700/80 text-slate-300 group-hover:border-slate-600"
-                  }`}>
-                    {step.id}
-                  </div>
+                  <span>📊 Sales Overview & Trends</span>
+                </button>
+                <button
+                  onClick={() => setPerformanceSubTab("map")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    performanceSubTab === "map" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🗺️ Compare Locations (Map)</span>
+                </button>
+                <button
+                  onClick={() => setPerformanceSubTab("health")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    performanceSubTab === "health" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🏥 Health Scores (0-100)</span>
+                </button>
+                <button
+                  onClick={() => setPerformanceSubTab("underperforming")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    performanceSubTab === "underperforming" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>⚠️ Underperforming Stores ({underperformingStores.length})</span>
+                </button>
+                <button
+                  onClick={() => setPerformanceSubTab("logs")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    performanceSubTab === "logs" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📋 Daily Transaction Logs</span>
+                </button>
+              </div>
 
-                  {sidebarOpen && (
-                    <div className="flex-1 text-left overflow-hidden">
-                      <p className={`text-xs font-bold leading-tight truncate ${isSelected ? "text-white" : "text-slate-200"}`}>{step.name}</p>
-                      <p className="text-[9px] text-slate-400 truncate mt-0.5">{step.category.toUpperCase()}</p>
+              {/* 1. SALES OVERVIEW & TRENDS SUB-TAB */}
+              {performanceSubTab === "overview" && (
+                <div className="space-y-4">
+                  {summary && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">Gross Revenue</span>
+                        <div className="text-xl font-black text-slate-900 mt-1">₹{summary.grossRevenue.toLocaleString('en-IN')}</div>
+                        <span className="text-[11px] text-emerald-600 font-semibold flex items-center mt-1">
+                          <Icons.TrendUp /> <span className="ml-1">+14.2% MoM</span>
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">Net Profit Margin</span>
+                        <div className="text-xl font-black text-indigo-600 mt-1">{summary.profitMargin}%</div>
+                        <span className="text-[11px] text-slate-500 mt-1 block">Net: ₹{summary.netProfit.toLocaleString('en-IN')}</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">Total Orders</span>
+                        <div className="text-xl font-black text-slate-900 mt-1">{summary.totalOrders.toLocaleString('en-IN')}</div>
+                        <span className="text-[11px] text-slate-500 mt-1 block">AOV: ₹{summary.averageOrderValue}</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">Digital Payments</span>
+                        <div className="text-xl font-black text-cyan-600 mt-1">
+                          {(((summary.paymentSplit.upi + summary.paymentSplit.card) / (summary.grossRevenue || 1)) * 100).toFixed(1)}%
+                        </div>
+                        <span className="text-[11px] text-slate-500 mt-1 block">UPI + Card dominant</span>
+                      </div>
                     </div>
                   )}
-                </button>
-              );
-            })}
-          </nav>
 
-          {sidebarOpen && (
-            <div className="px-4 py-3 border-t border-white/10 bg-slate-950/40">
-              <div className="flex items-center space-x-2 text-[10px] text-slate-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="font-semibold text-slate-300">Live API Server: Online</span>
-              </div>
-              <p className="text-[9px] text-slate-500 mt-0.5">{currentTime || "Live Telemetry Connected"}</p>
-            </div>
-          )}
-        </div>
-      </aside>
+                  {aiInsights.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {aiInsights.map((ins, idx) => {
+                        const IconComp = (Icons as any)[ins.icon] || Icons.Sparkle;
+                        return (
+                          <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-700">{ins.title}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ins.tagColor}`}>
+                                {ins.tag}
+                              </span>
+                            </div>
+                            <div className="text-lg font-black text-slate-900 flex items-center space-x-1">
+                              <IconComp />
+                              <span>{ins.value}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-snug">{ins.subtext}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
-      {/* ── Main View Container ────────────────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-
-        {/* Floating Apple Frosted Glass Header */}
-        <header className="shrink-0 z-10 apple-glass border-b border-slate-200/80 shadow-sm">
-          <div className="h-16 px-6 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setSidebarOpen(o => !o)}
-                className="p-2 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-colors lg:hidden"
-              >
-                <Icons.Menu />
-              </button>
-              <div>
-                <h1 className="text-base font-extrabold text-[#1d1d1f] tracking-tight leading-tight flex items-center gap-2">
-                  <span>Step {selectedStep}: {WORKFLOW_STEPS[selectedStep - 1].name}</span>
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                    Live Interactive Agent
-                  </span>
-                </h1>
-                <p className="text-xs text-slate-500 truncate max-w-xl">{WORKFLOW_STEPS[selectedStep - 1].desc}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              {/* Quick Spotlight Command Search */}
-              <button
-                onClick={() => setCommandPaletteOpen(true)}
-                className="hidden md:flex items-center space-x-2 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 transition-all shadow-inner"
-              >
-                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <span>Quick Search...</span>
-                <kbd className="bg-white px-1.5 py-0.5 rounded border text-[10px] font-mono text-slate-400">⌘K</kbd>
-              </button>
-
-              <button
-                onClick={() => setSelectedStep(5)}
-                className={`flex items-center space-x-1.5 text-xs font-bold px-3.5 py-1.5 rounded-full shadow-sm transition-all ${
-                  selectedStep === 5 ? "bg-indigo-600 text-white shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-indigo-50 border border-slate-200"
-                }`}
-              >
-                <Icons.Staff />
-                <span>Worker Attendance & Payroll</span>
-              </button>
-
-              <Link
-                href="/inventory"
-                className="flex items-center space-x-1.5 text-xs font-bold text-slate-700 hover:text-blue-600 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-200 px-3.5 py-1.5 rounded-full shadow-sm transition-all"
-              >
-                <Icons.Inventory />
-                <span>Inventory Agent</span>
-              </Link>
-
-              {/* User State Pill */}
-              {currentUser ? (
-                <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
-                  <div className="h-8 w-8 rounded-full overflow-hidden border border-blue-300 bg-blue-50 shrink-0">
-                    {currentUser.avatar ? (
-                      <img src={currentUser.avatar} alt={currentUser.name} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center font-bold text-blue-700 text-xs">
-                        {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : "U"}
-                      </div>
-                    )}
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                    <h3 className="text-base font-bold text-slate-900">Revenue & Operating Cost Daily Trends</h3>
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={trends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <Tooltip formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, '']} />
+                          <Area type="monotone" dataKey="grossRevenue" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" name="Gross Revenue" />
+                          <Area type="monotone" dataKey="netProfit" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorProfit)" name="Net Profit" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
-                  <div className="hidden md:block text-left">
-                    <p className="text-xs font-bold text-slate-800 leading-tight">{currentUser.name || "Operator"}</p>
-                    <p className="text-[10px] text-slate-500 capitalize">{currentUser.role || currentUser.method || "User"}</p>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    title="Sign Out"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <Link
-                    href="/login"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-full transition-all shadow-md shadow-blue-600/20 active:scale-[0.98]"
-                  >
-                    Sign In
-                  </Link>
-                  <Link
-                    href="/signup"
-                    className="hidden sm:inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-3.5 py-2 rounded-full transition-all"
-                  >
-                    Sign Up
-                  </Link>
                 </div>
               )}
-            </div>
-          </div>
-        </header>
 
-        {/* Main Scrollable View */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-screen-2xl mx-auto px-6 py-8">
+              {/* 2. COMPARE LOCATIONS MAP SUB-TAB */}
+              {performanceSubTab === "map" && (
+                <MapComponent
+                  locations={mapLocations}
+                  selectedLocationIds={selectedLocationIds}
+                  onToggleSelectLocation={handleToggleSelectLocation}
+                  onOpenCompare={() => setIsCompareModalOpen(true)}
+                />
+              )}
 
-            {/* ── STEP 5: WORKER ATTENDANCE & PAYROLL INTELLIGENCE AGENT ───────── */}
-            {selectedStep === 5 && (
-              <div className="space-y-6 animate-fade-in">
-                
-                {/* Header Banner */}
-                <div className="apple-card p-6 bg-gradient-to-r from-indigo-50/70 via-purple-50/50 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">Step 5 · Worker Attendance & Payroll Intelligence</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Staff Attendance, Start/End Timings & Salary Tracker</h2>
-                    <p className="text-xs text-slate-600 mt-1">Track daily clock-in/clock-out timings, inspect attendance logs, bonus allocations, and salary cuts with reasons.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => setShowClockInModal(true)}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>Punch Clock In / Out</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowAddWorkerModal(true)}
-                      className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
-                    >
-                      <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                      </svg>
-                      <span>Register New Worker</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* KPI Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { label: "Total Active Workers", val: workers.length, sub: "5 Franchise Locations", color: "text-indigo-600" },
-                    { label: "Present Today", val: workers.filter(w => w.status === "Present").length, sub: "100% On-Time Target", color: "text-emerald-600" },
-                    { label: "Late Clock-ins", val: workers.filter(w => w.status === "Late").length, sub: "Flagged by POS Terminal", color: "text-amber-600" },
-                    { label: "Total Monthly Salary Budget", val: formatCurrency(workers.reduce((acc, w) => acc + w.baseSalary + w.bonus - w.salaryCut, 0)), sub: "Includes Bonuses & Salary Cuts", color: "text-purple-600" },
-                  ].map(c => (
-                    <div key={c.label} className="apple-card apple-card-hover p-5">
-                      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{c.label}</p>
-                      <p className={`text-2xl font-black mt-2 tracking-tight ${c.color}`}>{c.val}</p>
-                      <p className="text-xs font-semibold text-slate-500 mt-1.5">{c.sub}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Worker Controls & Filters */}
-                <div className="apple-card p-4 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-600">
-                      Click Any Worker Row to View Full Attendance & Salary Cut History
-                    </h3>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <input
-                      type="text"
-                      placeholder="Search worker name, email, role, or phone..."
-                      value={staffSearch}
-                      onChange={e => setStaffSearch(e.target.value)}
-                      className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-72"
-                    />
-
-                    <select
-                      value={staffOutletFilter}
-                      onChange={e => setStaffOutletFilter(e.target.value)}
-                      className="text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm"
-                    >
-                      <option value="all">All Locations</option>
-                      <option value="Bengaluru">Bengaluru Central</option>
-                      <option value="Hyderabad">Hyderabad Tech Park</option>
-                      <option value="Chennai">Chennai Marina</option>
-                      <option value="Mumbai">Mumbai Andheri</option>
-                      <option value="Pune">Pune Hinjawadi</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Main Worker Attendance Table */}
-                <div className="apple-card overflow-hidden shadow-sm">
-                  <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              {/* 3. OUTLET HEALTH SCORES SUB-TAB */}
+              {performanceSubTab === "health" && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
-                      <h3 className="font-extrabold text-[#1d1d1f] text-sm">Daily Worker Attendance & Start/End Timings</h3>
-                      <p className="text-xs text-slate-500">Live POS clock-in telemetry with salary breakdown</p>
+                      <h3 className="text-base font-bold text-slate-900">Franchise Outlet Health Score Engine</h3>
+                      <p className="text-xs text-slate-500">Multi-factor algorithmic scores evaluating profitability, inventory stability, and staff efficiency</p>
                     </div>
-                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full">
-                      Real-time Punch Sync
+                    <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-200">
+                      Network Score Avg: 76/100
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100/70 text-[10px] uppercase font-black text-slate-500 tracking-wider">
-                        <tr>
-                          <th className="px-5 py-3.5">Worker Name & Role</th>
-                          <th className="px-4 py-3.5">Outlet Location</th>
-                          <th className="px-4 py-3.5 text-center">Start Time (Clock In)</th>
-                          <th className="px-4 py-3.5 text-center">End Time (Clock Out)</th>
-                          <th className="px-4 py-3.5">Today Status</th>
-                          <th className="px-4 py-3.5 text-right">Base Salary</th>
-                          <th className="px-4 py-3.5 text-right">Bonus</th>
-                          <th className="px-4 py-3.5 text-right">Salary Cut</th>
-                          <th className="px-5 py-3.5 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {filteredWorkers.map(worker => {
-                          const statusBg = worker.status === "Present" ? "bg-emerald-100 text-emerald-800" : worker.status === "Late" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800";
-                          return (
-                            <tr
-                              key={worker.id}
-                              onClick={() => setSelectedWorkerModal(worker)}
-                              className="hover:bg-indigo-50/50 cursor-pointer transition-colors group"
-                            >
-                              <td className="px-5 py-4">
-                                <div className="flex items-center space-x-3">
-                                  <img src={worker.avatar} alt={worker.name} className="h-9 w-9 rounded-full object-cover border border-slate-200 shrink-0" />
-                                  <div>
-                                    <p className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">{worker.name}</p>
-                                    <p className="text-[11px] text-slate-500">{worker.role} · <span className="font-mono text-slate-400">{worker.employeeId}</span></p>
-                                  </div>
-                                </div>
-                              </td>
-
-                              <td className="px-4 py-4 font-semibold text-slate-700">{worker.outletName}</td>
-
-                              <td className="px-4 py-4 text-center font-mono font-bold text-emerald-700 bg-emerald-50/60 rounded-xl">
-                                {worker.clockIn}
-                              </td>
-
-                              <td className="px-4 py-4 text-center font-mono font-bold text-slate-700 bg-slate-100/60 rounded-xl">
-                                {worker.clockOut}
-                              </td>
-
-                              <td className="px-4 py-4">
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${statusBg}`}>{worker.status}</span>
-                              </td>
-
-                              <td className="px-4 py-4 text-right font-bold text-slate-900">{formatCurrency(worker.baseSalary)}</td>
-
-                              <td className="px-4 py-4 text-right font-extrabold text-emerald-600">+{formatCurrency(worker.bonus)}</td>
-
-                              <td className="px-4 py-4 text-right font-extrabold text-red-600">
-                                {worker.salaryCut > 0 ? `-${formatCurrency(worker.salaryCut)}` : "₹0"}
-                              </td>
-
-                              <td className="px-5 py-4 text-right">
-                                <div className="flex items-center justify-end space-x-1.5" onClick={e => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => handleGiveWorkerBonus(worker.id)}
-                                    title="Approve ₹1,000 Bonus"
-                                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-[10px] border border-emerald-200 transition-all"
-                                  >
-                                    +₹1k Bonus
-                                  </button>
-                                  {worker.salaryCut > 0 && (
-                                    <button
-                                      onClick={() => handleWaiveSalaryCut(worker.id)}
-                                      title="Waive Salary Cut"
-                                      className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 font-extrabold text-[10px] border border-amber-200 transition-all"
-                                    >
-                                      Waive Cut
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => setSelectedWorkerModal(worker)}
-                                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] shadow-sm transition-all"
-                                  >
-                                    Inspect Profile
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {healthScores.map((h) => (
+                      <div key={h.outletId} className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-900">{h.outletName}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${h.badgeColor}`}>
+                            {h.badge}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline space-x-2">
+                          <span className="text-2xl font-black text-slate-900">{h.healthScore}</span>
+                          <span className="text-xs text-slate-400">/ 100 score</span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              h.healthScore >= 80 ? "bg-emerald-500" : h.healthScore >= 65 ? "bg-blue-500" : h.healthScore >= 50 ? "bg-amber-500" : "bg-red-500"
+                            }`}
+                            style={{ width: `${h.healthScore}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex justify-between pt-1">
+                          <span>Margin: {h.metrics.profitMargin}%</span>
+                          <span>Stock Alerts: {h.metrics.stockIssues}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Other Steps render appropriately */}
-            {selectedStep === 1 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-blue-50/50 to-white">
-                  <div>
-                    <span className="text-xs font-black text-cyan-600 uppercase tracking-widest">Step 1 · Data Ingestion Engine</span>
-                    <h2 className="text-xl font-black text-[#1d1d1f] mt-1">Multi-Source Franchise Telemetry Stream</h2>
-                    <p className="text-xs text-slate-500 mt-1">Ingests raw POS logs, inventory telemetry, staff shift punches, and audit scores.</p>
+              {/* 4. UNDERPERFORMING STORES DIAGNOSTIC SUB-TAB */}
+              {performanceSubTab === "underperforming" && (
+                <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-orange-500/10 rounded-2xl p-5 border border-amber-200 shadow-sm space-y-4">
+                  <div className="flex items-center space-x-2 text-rose-700 font-bold text-base">
+                    <Icons.Warning />
+                    <span>Underperforming Store Diagnostic Flags & Action Plans</span>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleDatabaseSync}
-                      disabled={isSyncingDb}
-                      className="bg-white border border-slate-200 hover:bg-slate-50 font-bold text-xs px-4 py-2 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
-                    >
-                      {isSyncingDb ? (
-                        <>
-                          <span className="h-3.5 w-3.5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin"></span>
-                          <span>Syncing...</span>
-                        </>
-                      ) : (
-                        <span>Sync Database</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setShowCsvUploadModal(true)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
-                      </svg>
-                      <span>Upload CSV Payload</span>
-                    </button>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {[
-                    { label: "POS Sales Ingestion Rate", val: "1,420 events/min", status: "Live Feed", color: "text-emerald-600" },
-                    { label: "Active Outlet Pipes", val: "5 Locations Connected", status: "100% Up", color: "text-blue-600" },
-                    { label: "Inventory Sensor Telemetry", val: "Real-time depletion", status: "Synced", color: "text-indigo-600" },
-                    { label: "Ingestion Latency", val: "14ms Avg", status: "Optimal", color: "text-purple-600" },
-                  ].map(c => (
-                    <div key={c.label} className="apple-card p-5">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{c.label}</p>
-                      <p className={`text-xl font-black mt-2 ${c.color}`}>{c.val}</p>
-                      <span className="mt-2 inline-block text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{c.status}</span>
+                  {underperformingStores.map((store) => (
+                    <div key={store.outletId} className="bg-white rounded-xl p-4 border border-rose-200 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">{store.outletName} ({store.city})</h4>
+                          <p className="text-xs text-red-600 font-semibold mt-0.5">Primary Issue: {store.primaryDiagnostic}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full self-start">
+                          Action Required
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <div><span className="text-slate-400 block text-[10px]">Margin</span><span className="font-bold text-red-600">{store.metrics.profitMargin}%</span></div>
+                        <div><span className="text-slate-400 block text-[10px]">Revenue</span><span className="font-bold text-slate-800">₹{store.metrics.revenue.toLocaleString('en-IN')}</span></div>
+                        <div><span className="text-slate-400 block text-[10px]">Stock Alerts</span><span className="font-bold text-amber-600">{store.metrics.stockAlerts}</span></div>
+                        <div><span className="text-slate-400 block text-[10px]">Staff Rating</span><span className="font-bold text-slate-800">{store.metrics.staffRating}/5.0</span></div>
+                      </div>
+
+                      <div>
+                        <span className="text-xs font-bold text-slate-700 block mb-1">AI Turnaround Action Plan:</span>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-600">
+                          {store.actionPlan.map((act: string, idx: number) => (
+                            <li key={idx} className="flex items-start space-x-1.5 bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/50">
+                              <span className="text-indigo-600 font-bold shrink-0">✓</span>
+                              <span>{act}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                   ))}
                 </div>
+              )}
 
-                {/* Live Real-Time Telemetry Event Log */}
-                <div className="apple-card p-6 bg-slate-900 text-white">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                    <div className="flex items-center space-x-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${isStreamingLiveEvents ? "bg-emerald-400 animate-ping" : "bg-amber-400"}`}></span>
-                      <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
-                        Live Socket Telemetry Feed ({liveEventsLog.length} events active)
-                      </h3>
+              {/* 5. DAILY TRANSACTION LOGS SUB-TAB (PAGE SEGMENTATION) */}
+              {performanceSubTab === "logs" && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Daily Sales Transaction Ledger</h3>
+                      <p className="text-xs text-slate-500">Historical transaction log with page segmentation</p>
                     </div>
-                    <button
-                      onClick={() => setIsStreamingLiveEvents(prev => !prev)}
-                      className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all border border-slate-700"
-                    >
-                      {isStreamingLiveEvents ? "Pause Stream" : "Resume Stream"}
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-slate-500">Rows per page:</span>
+                      <select
+                        value={salesPageSize}
+                        onChange={(e) => {
+                          setSalesPageSize(parseInt(e.target.value, 10));
+                          setSalesPage(1);
+                        }}
+                        className="px-2.5 py-1 bg-slate-50 border border-slate-200 text-xs rounded-lg text-slate-800 cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div className="space-y-2 font-mono text-xs max-h-48 overflow-y-auto pr-1">
-                    {liveEventsLog.map(e => (
-                      <div key={e.id} className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-slate-300">
-                        <span className="truncate mr-3">[{e.time}] {e.text}</span>
-                        <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded shrink-0 border border-indigo-800">
-                          RAW_WEBSOCKET
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-700">
+                      <thead className="bg-slate-100 text-slate-900 uppercase font-semibold text-[11px] tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Date</th>
+                          <th className="py-3 px-4">Outlet</th>
+                          <th className="py-3 px-4">Orders</th>
+                          <th className="py-3 px-4">Gross Revenue</th>
+                          <th className="py-3 px-4">Operating Cost</th>
+                          <th className="py-3 px-4">Net Profit</th>
+                          <th className="py-3 px-4">AOV</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {salesList.map((row) => (
+                          <tr key={row.id} className="hover:bg-slate-50">
+                            <td className="py-3 px-4 font-semibold text-slate-900">{row.saleDate}</td>
+                            <td className="py-3 px-4 text-slate-700">{row.city} ({row.outletName})</td>
+                            <td className="py-3 px-4 text-slate-800 font-medium">{row.totalOrders}</td>
+                            <td className="py-3 px-4 font-bold text-emerald-600">₹{row.grossRevenue.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 text-slate-600">₹{row.operatingCost.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 font-bold text-cyan-600">₹{row.netProfit.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 text-slate-800">₹{row.averageOrderValue}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Page Segmentation Controls */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">
+                      Showing <strong className="text-slate-800">{(salesPage - 1) * salesPageSize + 1}</strong> to{" "}
+                      <strong className="text-slate-800">{Math.min(salesPage * salesPageSize, totalSalesRecords)}</strong> of{" "}
+                      <strong className="text-slate-800">{totalSalesRecords}</strong> records
+                    </span>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setSalesPage((p) => Math.max(1, p - 1))}
+                        disabled={salesPage === 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <Icons.ChevronLeft />
+                        <span>Previous</span>
+                      </button>
+
+                      <span className="font-semibold text-slate-800 px-2">
+                        Page {salesPage} of {totalSalesPages}
+                      </span>
+
+                      <button
+                        onClick={() => setSalesPage((p) => Math.min(totalSalesPages, p + 1))}
+                        disabled={salesPage >= totalSalesPages}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <Icons.ChevronRight />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 4: STOCK INVENTORY AGENT */}
+          {activeStepId === 4 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Feature Rendering Buttons Bar */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button
+                  onClick={() => setInventorySubTab("roster")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    inventorySubTab === "roster" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📦 Stock Inventory Table</span>
+                </button>
+                <button
+                  onClick={() => setInventorySubTab("ai")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    inventorySubTab === "ai" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🤖 AI Stock Depletion Forecast</span>
+                </button>
+                <button
+                  onClick={() => setInventorySubTab("reorders")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    inventorySubTab === "reorders" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📑 Reorder Purchase Orders</span>
+                </button>
+              </div>
+
+              {inventoryInsights?.summary && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Monitored Items</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">{inventoryInsights.summary.totalItems} Items</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Total Valuation</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">₹{inventoryInsights.summary.totalValuation.toLocaleString('en-IN')}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Stock Risk Alerts</span>
+                    <div className="text-xl font-black text-amber-600 mt-1">
+                      {inventoryInsights.summary.criticalItems + inventoryInsights.summary.lowStockItems} Low
+                    </div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Health Index</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">{inventoryInsights.summary.healthIndex}%</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 1. STOCK INVENTORY ROSTER SUB-TAB (PAGE SEGMENTATION) */}
+              {inventorySubTab === "roster" && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Store Stock Inventory Roster</h3>
+                      <p className="text-xs text-slate-500">Live item stock levels and reorder parameters</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-slate-500">Items per page:</span>
+                      <select
+                        value={invPageSize}
+                        onChange={(e) => { setInvPageSize(parseInt(e.target.value, 10)); setInvPage(1); }}
+                        className="px-2.5 py-1 bg-slate-50 border border-slate-200 text-xs rounded-lg text-slate-800 cursor-pointer"
+                      >
+                        <option value={5}>5</option>
+                        <option value={8}>8</option>
+                        <option value={15}>15</option>
+                        <option value={30}>30</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-700">
+                      <thead className="bg-slate-100 text-slate-900 uppercase font-semibold text-[11px] tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Item Name</th>
+                          <th className="py-3 px-4">Outlet</th>
+                          <th className="py-3 px-4">Category</th>
+                          <th className="py-3 px-4">Current Stock</th>
+                          <th className="py-3 px-4">Unit Price</th>
+                          <th className="py-3 px-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {paginatedInventoryItems.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50">
+                            <td className="py-3 px-4 font-bold text-slate-900">{item.itemName}</td>
+                            <td className="py-3 px-4 text-slate-600">{item.city} ({item.outletName})</td>
+                            <td className="py-3 px-4"><span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600 font-medium">{item.category}</span></td>
+                            <td className="py-3 px-4 font-semibold text-slate-800">{item.currentStock} {item.unit}</td>
+                            <td className="py-3 px-4 text-slate-700">₹{item.unitPrice}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                item.status === 'Critical' ? "bg-red-100 text-red-800" : item.status === 'Low Stock' ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                              }`}>
+                                {item.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">
+                      Showing <strong className="text-slate-800">{(invPage - 1) * invPageSize + 1}</strong> to{" "}
+                      <strong className="text-slate-800">{Math.min(invPage * invPageSize, inventoryItems.length)}</strong> of{" "}
+                      <strong className="text-slate-800">{inventoryItems.length}</strong> items
+                    </span>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setInvPage((p) => Math.max(1, p - 1))}
+                        disabled={invPage === 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <Icons.ChevronLeft />
+                        <span>Previous</span>
+                      </button>
+
+                      <span className="font-semibold text-slate-800 px-2">
+                        Page {invPage} of {totalInvPages}
+                      </span>
+
+                      <button
+                        onClick={() => setInvPage((p) => Math.min(totalInvPages, p + 1))}
+                        disabled={invPage >= totalInvPages}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <Icons.ChevronRight />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. AI DEPLETION FORECAST SUB-TAB */}
+              {inventorySubTab === "ai" && inventoryInsights && (
+                <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl space-y-3">
+                  <h3 className="text-base font-bold text-white">AI Depletion Velocity Forecast</h3>
+                  <div className="space-y-2">
+                    {inventoryInsights.depletionForecasts.map((dep: any) => (
+                      <div key={dep.id} className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-semibold text-white block">{dep.itemName} ({dep.city})</span>
+                          <span className="text-slate-400">Stock: {dep.currentStock} {dep.unit}</span>
+                        </div>
+                        <span className={`font-bold px-2.5 py-1 rounded-full ${dep.riskLevel === 'High' ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"}`}>
+                          ~{dep.daysRemaining} days remaining
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ── STEP 3: OUTLET PERFORMANCE AGENT (FULL DASHBOARD) ────────────── */}
-            {selectedStep === 3 && (
-              <div className="space-y-8 animate-fade-in">
-                {/* Apple Controls Toolbar */}
-                <div className="apple-card p-4 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                      Outlet Performance Intelligence Command Center
-                    </h3>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={exportSalesToCsv}
-                      className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs px-3.5 py-1.5 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
-                    >
-                      <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
-                      </svg>
-                      <span>Export CSV</span>
-                    </button>
-
-                    <button
-                      onClick={() => setShowRecordSalesModal(true)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      <span>Record Daily Sales</span>
-                    </button>
-
-                    <div className="flex items-center space-x-2">
-                      <label htmlFor="outlet-select" className="text-xs font-bold text-slate-500">Outlet:</label>
-                      <select
-                        id="outlet-select"
-                        value={selectedOutlet}
-                        onChange={e => { setSelectedOutlet(e.target.value); setCurrentPage(1); }}
-                        className="text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm"
-                      >
-                        <option value="all">All Outlets (Consolidated)</option>
-                        {outlets.map((o: any) => (
-                          <option key={o.id} value={o.id}>{o.outlet_name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <label htmlFor="date-select" className="text-xs font-bold text-slate-500">Timeframe:</label>
-                      <select
-                        id="date-select"
-                        value={dateRange}
-                        onChange={e => { setDateRange(e.target.value); setCurrentPage(1); }}
-                        className="text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm"
-                      >
-                        <option value="7">Last 7 Days</option>
-                        <option value="14">Last 14 Days</option>
-                        <option value="30">Last 30 Days</option>
-                        <option value="60">Last 60 Days</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Key Metric Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { label: "Gross Sales Revenue", val: formatCurrency(metrics.grossRevenue), detail: `${formatNumber(metrics.totalOrders)} Total Orders`, color: "text-blue-600" },
-                    { label: "Net Operating Profit", val: formatCurrency(metrics.netProfit), detail: `${metrics.profitMargin}% Profit Margin`, color: "text-emerald-600" },
-                    { label: "Total Customer Visits", val: formatNumber(metrics.totalCustomers), detail: `₹${metrics.averageOrderValue} Avg Order Value`, color: "text-indigo-600" },
-                    { label: "Total Operating Expenses", val: formatCurrency(metrics.operatingCost), detail: `${metrics.grossRevenue > 0 ? ((metrics.operatingCost / metrics.grossRevenue) * 100).toFixed(1) : 0}% Cost Ratio`, color: "text-amber-600" },
-                  ].map(card => (
-                    <div key={card.label} className="apple-card apple-card-hover p-5">
-                      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{card.label}</p>
-                      <p className={`text-2xl font-black mt-2 tracking-tight ${card.color}`}>{card.val}</p>
-                      <p className="text-xs font-semibold text-slate-500 mt-2">{card.detail}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Revenue Trend Area Chart */}
-                <div className="apple-card p-6">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-6">
-                    <div>
-                      <h3 className="font-black text-[#1d1d1f] text-base">Revenue & Operating Cost Trend</h3>
-                      <p className="text-xs text-slate-500">Daily financial trajectory for {selectedOutletName}</p>
-                    </div>
-                    <div className="flex items-center space-x-4 text-xs font-bold">
-                      <span className="flex items-center text-blue-600"><span className="h-2.5 w-2.5 rounded-full bg-blue-600 mr-1.5"></span> Gross Revenue</span>
-                      <span className="flex items-center text-emerald-600"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600 mr-1.5"></span> Net Profit</span>
-                    </div>
-                  </div>
-                  <div className="h-72 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={trendsData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#0071e3" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#0071e3" stopOpacity={0} />
-                          </linearGradient>
-                          <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#34c759" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#34c759" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-                        <Tooltip contentStyle={{ background: "rgba(255, 255, 255, 0.9)", borderRadius: "1rem", border: "1px solid #e2e8f0", boxShadow: "0 10px 25px rgba(0,0,0,0.1)" }} />
-                        <Area type="monotone" dataKey="grossRevenue" stroke="#0071e3" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
-                        <Area type="monotone" dataKey="netProfit" stroke="#34c759" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* ── Geographic GIS Map & Multi-Outlet Compare Matrix ──────────────── */}
-                <MapComponent
-                  locations={mapLocations}
-                  selectedLocationIds={selectedLocationIds}
-                  onToggleSelectLocation={toggleSelectLocation}
-                  onOpenCompare={() => setCompareModalOpen(true)}
-                />
-
-                <CompareModal
-                  isOpen={compareModalOpen}
-                  onClose={() => setCompareModalOpen(false)}
-                  selectedLocationIds={selectedLocationIds}
-                />
-              </div>
-            )}
-
-            {/* ── STEP 2: DATA VALIDATION & SCHEMA AGENT ───────────────────────── */}
-            {selectedStep === 2 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-emerald-50/60 via-teal-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Step 2 · Data Validation & Schema Processing</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Autonomous Data Cleaning & Schema Compliance</h2>
-                    <p className="text-xs text-slate-600 mt-1">Validates schema compliance, converts currency formats, removes duplicate transactions, and handles null values.</p>
-                  </div>
-                  <button
-                    onClick={() => showToast("Schema Sanitizer executed: 0 syntax anomalies found!", "success")}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Run Schema Sanitizer</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {[
-                    { label: "Passed Records", val: `${salesRecords.length} / ${salesRecords.length}`, sub: "100% Validated", color: "text-emerald-600" },
-                    { label: "Corrupted Rows Cleaned", val: "0 Rows", sub: "Auto-repaired in pipeline", color: "text-blue-600" },
-                    { label: "Currency Normalization", val: "INR (₹) Standard", sub: "Cleaned ISO 4217", color: "text-indigo-600" },
-                    { label: "Schema Compliance", val: "v2.4 Strict", status: "Active", color: "text-purple-600" }
-                  ].map(c => (
-                    <div key={c.label} className="apple-card p-5">
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{c.label}</p>
-                      <p className={`text-2xl font-black mt-2 tracking-tight ${c.color}`}>{c.val}</p>
-                      <p className="text-xs text-slate-500 mt-1">{c.sub || c.status}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="apple-card p-6">
-                  <h3 className="font-extrabold text-slate-900 text-sm mb-3">Live Validation Audit Log</h3>
-                  <div className="space-y-2 font-mono text-xs">
-                    <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-between">
-                      <span>[2026-08-11 10:42:01] PASS: Checked {salesRecords.length} sales records. Zero duplicate transaction IDs.</span>
-                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">STATUS_OK</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900 text-blue-400 flex items-center justify-between">
-                      <span>[2026-08-11 10:42:02] PASS: All outlet_id references match master relational table.</span>
-                      <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">STATUS_OK</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 4: INVENTORY TELEMETRY AGENT ───────────────────────────── */}
-            {selectedStep === 4 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-purple-50/60 via-indigo-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-purple-600 uppercase tracking-widest">Step 4 · Inventory Telemetry Agent</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Real-Time Stock Cover & Auto-Reorder PO Engine</h2>
-                    <p className="text-xs text-slate-600 mt-1">Tracks stock consumption velocity, calculates burn rates, and dispatches supplier POs.</p>
-                  </div>
-                  <Link
-                    href="/inventory"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all shrink-0 flex items-center space-x-1.5"
-                  >
-                    <span>Open Full Inventory Agent View</span>
-                    <Icons.ChevronRight />
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div className="apple-card p-5">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Critical Deficit Items</p>
-                    <p className="text-3xl font-black text-red-600 mt-2">1 Item</p>
-                    <p className="text-xs text-slate-500 mt-1">Mozzarella Cheese (4.2 kg left at Hyderabad)</p>
-                    <button
-                      onClick={() => showToast("Dispatched PO-9921 for Mozzarella Cheese to Supplier!", "success")}
-                      className="mt-3 w-full py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-xl shadow-sm"
-                    >
-                      1-Click PO Reorder
-                    </button>
-                  </div>
-
-                  <div className="apple-card p-5">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Low Stock Warnings</p>
-                    <p className="text-3xl font-black text-amber-600 mt-2">2 Items</p>
-                    <p className="text-xs text-slate-500 mt-1">Espresso Coffee Beans, Chocolate Sauce</p>
-                    <button
-                      onClick={() => showToast("Pre-ordered Coffee Beans & Chocolate Sauce stock!", "info")}
-                      className="mt-3 w-full py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl shadow-sm"
-                    >
-                      Pre-Order Batch
-                    </button>
-                  </div>
-
-                  <div className="apple-card p-5">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Auto Reorder Rules</p>
-                    <p className="text-3xl font-black text-emerald-600 mt-2">8 / 8 SKUs</p>
-                    <p className="text-xs text-slate-500 mt-1">AI agent monitors burn rates 24/7</p>
-                    <Link
-                      href="/inventory"
-                      className="mt-3 block text-center py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-extrabold rounded-xl border border-indigo-200"
-                    >
-                      Manage Telemetry Rules
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 6: MARKETING & CAMPAIGN ROI AGENT ──────────────────────── */}
-            {selectedStep === 6 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-pink-50/60 via-purple-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-pink-600 uppercase tracking-widest">Step 6 · Marketing & Campaign ROI Agent</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Campaign Performance, CAC & Stock-Aware Discounts</h2>
-                    <p className="text-xs text-slate-600 mt-1">Tracks digital promotion ROI, customer acquisition cost (CAC), and allocates discounts dynamically.</p>
-                  </div>
-                  <button
-                    onClick={() => setShowMarketingModal(true)}
-                    className="bg-pink-600 hover:bg-pink-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Launch New Campaign</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  {marketingCampaigns.map(c => (
-                    <div key={c.id} className="apple-card apple-card-hover p-5">
-                      <div className="flex justify-between items-start">
-                        <span className="text-xs font-extrabold text-pink-600 bg-pink-50 border border-pink-200 px-2.5 py-0.5 rounded-full">{c.channel}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">{c.status}</span>
-                      </div>
-                      <h3 className="font-extrabold text-slate-900 text-sm mt-3">{c.name}</h3>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              {/* 3. REORDER PURCHASE ORDERS SUB-TAB */}
+              {inventorySubTab === "reorders" && inventoryInsights && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <h3 className="text-base font-bold text-slate-900">Automated Purchase Order Recommendations</h3>
+                  <div className="space-y-2">
+                    {inventoryInsights.restockRecommendations.map((rec: any) => (
+                      <div key={rec.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
                         <div>
-                          <p className="text-slate-400 text-[10px] uppercase font-bold">Total Budget</p>
-                          <p className="font-black text-slate-900">{formatCurrency(c.budget)}</p>
+                          <span className="font-bold text-slate-900 block">{rec.itemName} ({rec.city})</span>
+                          <span className="text-slate-500">Reorder Qty: {rec.recommendedQuantity} {rec.unit}</span>
                         </div>
-                        <div>
-                          <p className="text-slate-400 text-[10px] uppercase font-bold">Revenue ROI</p>
-                          <p className="font-black text-emerald-600">{c.roi}</p>
-                        </div>
+                        <span className="font-bold text-emerald-600 text-sm">₹{rec.estimatedCost.toLocaleString('en-IN')}</span>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 7: BRAND AUDIT & COMPLIANCE AGENT ───────────────────────── */}
-            {selectedStep === 7 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-amber-50/60 via-orange-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-amber-600 uppercase tracking-widest">Step 7 · Brand Audit & Compliance Agent</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Outlet Hygiene, Safety & SOP Compliance Scorecard</h2>
-                    <p className="text-xs text-slate-600 mt-1">Analyzes store audit scores, inspects refrigeration logs, and enforces brand uniform standards.</p>
-                  </div>
-                  <button
-                    onClick={() => setShowAuditModal(true)}
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Log Store Audit Inspection</span>
-                  </button>
-                </div>
-
-                <div className="apple-card overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 text-[10px] uppercase font-black text-slate-500">
-                      <tr>
-                        <th className="p-4">Outlet Location</th>
-                        <th className="p-4">Auditor</th>
-                        <th className="p-4 text-center">Hygiene</th>
-                        <th className="p-4 text-center">Safety</th>
-                        <th className="p-4 text-center">Uniform SOP</th>
-                        <th className="p-4 text-center">Total Score</th>
-                        <th className="p-4">Compliance Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {storeAudits.map(audit => (
-                        <tr key={audit.id} className="hover:bg-slate-50">
-                          <td className="p-4 font-extrabold text-slate-900">{audit.outletName}</td>
-                          <td className="p-4 text-slate-600">{audit.auditor}</td>
-                          <td className="p-4 text-center font-bold text-emerald-600">{audit.hygieneScore}%</td>
-                          <td className="p-4 text-center font-bold text-blue-600">{audit.safetyScore}%</td>
-                          <td className="p-4 text-center font-bold text-purple-600">{audit.uniformSopScore}%</td>
-                          <td className="p-4 text-center font-black text-slate-900 text-sm">{audit.totalScore}%</td>
-                          <td className="p-4">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                              audit.totalScore >= 90 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                            }`}>
-                              {audit.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 8: FRANCHISE INTELLIGENCE ENGINE ───────────────────────── */}
-            {selectedStep === 8 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-indigo-300 uppercase tracking-widest">Step 8 · Central Franchise Intelligence Engine</span>
-                    <h2 className="text-2xl font-black mt-1">Multi-Domain Agent Correlation Matrix</h2>
-                    <p className="text-xs text-indigo-200 mt-1">Fuses sales telemetry, marketing spend, staff attendance, and inventory depletion into centralized AI insights.</p>
-                  </div>
-                  <button
-                    onClick={() => showToast("AI Correlation Engine recalculated across 5 outlets!", "success")}
-                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-lg shrink-0"
-                  >
-                    Recalculate Correlations
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div className="apple-card p-5 border-l-4 border-l-emerald-500">
-                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Marketing vs Footfall Correlation</h4>
-                    <p className="text-2xl font-black text-emerald-600 mt-2">+0.88 Strong Pos</p>
-                    <p className="text-xs text-slate-500 mt-1">Zomato Monsoon promo directly drove +430 customer visits in Bengaluru & Hyderabad.</p>
-                  </div>
-
-                  <div className="apple-card p-5 border-l-4 border-l-amber-500">
-                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Staff Delays vs Order Rush Bottleneck</h4>
-                    <p className="text-2xl font-black text-amber-600 mt-2">-0.64 Inverse Impact</p>
-                    <p className="text-xs text-slate-500 mt-1">Late clock-ins at Chennai Marina increased peak customer wait times by 4.5 minutes.</p>
-                  </div>
-
-                  <div className="apple-card p-5 border-l-4 border-l-purple-500">
-                    <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Stockout Variance vs Sales Margin</h4>
-                    <p className="text-2xl font-black text-purple-600 mt-2">Zero Stockout Loss</p>
-                    <p className="text-xs text-slate-500 mt-1">Autonomous PO agent prevented projected ₹18,000 lost revenue from coffee bean depletion.</p>
+                    ))}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* ── STEP 9: BUSINESS STRATEGY RECOMMENDATIONS ENGINE ───────────── */}
-            {selectedStep === 9 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-emerald-50/60 via-indigo-50/40 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Step 9 · Business Strategy Recommendations Engine</span>
-                    <h2 className="text-2xl font-black text-[#1d1d1f] mt-1">Actionable Operational Strategies & ROI Optimizer</h2>
-                    <p className="text-xs text-slate-600 mt-1">AI-generated recommendations to boost sales, reduce labor waste, and prevent inventory deficits.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  {strategyRecommendations.map(rec => (
-                    <div key={rec.id} className="apple-card apple-card-hover p-6 flex flex-col justify-between space-y-4">
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">{rec.category}</span>
-                          <span className="text-[10px] font-bold text-slate-500">{rec.outlet}</span>
-                        </div>
-                        <h3 className="font-extrabold text-slate-900 text-sm">{rec.title}</h3>
-                        <p className="text-xs text-slate-600 mt-2 leading-relaxed">{rec.desc}</p>
-                      </div>
-
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase text-slate-400">Projected Impact</p>
-                          <p className="font-black text-emerald-600 text-sm">{rec.impact}</p>
-                        </div>
-
-                        {rec.applied ? (
-                          <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl">
-                            ✓ Strategy Applied
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleApplyRecommendation(rec.id)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl shadow-md transition-all active:scale-[0.98]"
-                          >
-                            Apply Recommendation
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── STEP 10: DASHBOARD & REAL-TIME ALERTS COMMAND CENTER ────────── */}
-            {selectedStep === 10 && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="apple-card p-6 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-black text-indigo-300 uppercase tracking-widest">Step 10 · Executive Dashboard & Anomaly Alerts</span>
-                    <h2 className="text-2xl font-black mt-1">Real-Time Operational Anomaly Alert Center</h2>
-                    <p className="text-xs text-indigo-200 mt-1">Monitors critical anomalies across inventory, labor clock-ins, and outlet revenue benchmarks.</p>
-                  </div>
-                  <span className="text-xs font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3.5 py-2 rounded-xl">
-                    ● Telemetry Stream 100% Operational
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  {systemAlerts.map(a => (
-                    <div
-                      key={a.id}
-                      className={`apple-card p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
-                        a.resolved ? "opacity-60 bg-slate-50" : ""
-                      }`}
-                    >
-                      <div className="flex items-start space-x-3">
-                        <span className={`h-3 w-3 rounded-full mt-1 shrink-0 ${
-                          a.level === "critical" ? "bg-red-500 animate-ping" : a.level === "warning" ? "bg-amber-500" : "bg-blue-500"
-                        }`}></span>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <h4 className="font-extrabold text-slate-900 text-sm">{a.title}</h4>
-                            <span className="text-[10px] font-bold text-slate-500">({a.outlet})</span>
-                          </div>
-                          <p className="text-xs text-slate-600 mt-0.5">{a.desc}</p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0">
-                        {a.resolved ? (
-                          <span className="text-xs font-extrabold text-slate-500 bg-slate-200 px-3 py-1 rounded-xl">Resolved</span>
-                        ) : (
-                          <button
-                            onClick={() => handleResolveAlert(a.id)}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm transition-all"
-                          >
-                            Resolve Alert
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </div>
-        </main>
-
-        {/* Footer */}
-        <footer className="shrink-0 apple-glass border-t border-slate-200/80 py-3.5 px-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 font-medium">
-            <span>© 2026 FranchiseOps AI Inc. Designed with Apple-grade precision.</span>
-            <div className="flex space-x-6">
-              <a href="#" className="hover:text-slate-900 transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-slate-900 transition-colors">Terms of Service</a>
-              <a href="#" className="hover:text-slate-900 transition-colors">Support Center</a>
+              )}
             </div>
-          </div>
-        </footer>
+          )}
 
+          {/* STEP 5: STAFF AGENT */}
+          {activeStepId === 5 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Feature Rendering Buttons Bar */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button
+                  onClick={() => setStaffSubTab("roster")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "roster" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>👥 Staff Roster Table</span>
+                </button>
+                <button
+                  onClick={() => setStaffSubTab("performers")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "performers" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🏆 Top 5 Performers</span>
+                </button>
+                <button
+                  onClick={() => setStaffSubTab("underperformers")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "underperformers" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>⚠️ Bottom 5 Underperformers</span>
+                </button>
+                <button
+                  onClick={() => setStaffSubTab("allocate")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "allocate" ? "bg-violet-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📋 Job Allocation</span>
+                </button>
+                <button
+                  onClick={() => setStaffSubTab("ai")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "ai" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🧠 AI Labor Efficiency</span>
+                </button>
+                <button
+                  onClick={() => setStaffSubTab("shifts")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    staffSubTab === "shifts" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📅 Shift Distribution</span>
+                </button>
+              </div>
+
+              {staffInsights?.summary && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Active Staff</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">{staffInsights.summary.totalStaff} Members</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Monthly Payroll</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">₹{staffInsights.summary.totalMonthlyPayroll.toLocaleString('en-IN')}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Labor Cost Ratio</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">{staffInsights.summary.laborCostRatioPercentage}%</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Avg Rating</span>
+                    <div className="text-xl font-black text-amber-500 mt-1">★ {staffInsights.summary.averageRating}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 1. STAFF ROSTER SUB-TAB (PAGE SEGMENTATION) */}
+              {staffSubTab === "roster" && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Franchise Staff Roster & Performance Ratings</h3>
+                      <p className="text-xs text-slate-500">Employee performance, shifts, and wage analytics</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-slate-500">Staff per page:</span>
+                      <select
+                        value={staffPageSize}
+                        onChange={(e) => { setStaffPageSize(parseInt(e.target.value, 10)); setStaffPage(1); }}
+                        className="px-2.5 py-1 bg-slate-50 border border-slate-200 text-xs rounded-lg text-slate-800 cursor-pointer"
+                      >
+                        <option value={5}>5</option>
+                        <option value={8}>8</option>
+                        <option value={15}>15</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-700">
+                      <thead className="bg-slate-100 text-slate-900 uppercase font-semibold text-[11px] tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Staff Name</th>
+                          <th className="py-3 px-4">Outlet</th>
+                          <th className="py-3 px-4">Role</th>
+                          <th className="py-3 px-4">Assigned Job</th>
+                          <th className="py-3 px-4">Shift</th>
+                          <th className="py-3 px-4">Login Time</th>
+                          <th className="py-3 px-4">Logoff Time</th>
+                          <th className="py-3 px-4">Monthly Wages</th>
+                          <th className="py-3 px-4">Rating</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {paginatedStaffMembers.map((member) => (
+                          <tr key={member.id} className="hover:bg-slate-50">
+                            <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">{member.name}</td>
+                            <td className="py-3 px-4 text-slate-600 whitespace-nowrap">{member.city}</td>
+                            <td className="py-3 px-4"><span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-medium whitespace-nowrap">{member.role}</span></td>
+                            <td className="py-3 px-4 text-slate-600 max-w-[160px]">
+                              <span className="block truncate" title={member.assignedJob}>{member.assignedJob}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                                member.shiftType === 'Morning' ? 'bg-amber-100 text-amber-800' : member.shiftType === 'Evening' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'
+                              }`}>{member.shiftType}</span>
+                            </td>
+                            <td className="py-3 px-4 text-emerald-700 font-semibold whitespace-nowrap">🕐 {member.loginTime}</td>
+                            <td className="py-3 px-4 text-rose-600 font-semibold whitespace-nowrap">🕔 {member.logoffTime}</td>
+                            <td className="py-3 px-4 font-semibold text-emerald-600 whitespace-nowrap">₹{member.monthlyWages.toLocaleString('en-IN')}</td>
+                            <td className="py-3 px-4 font-bold text-amber-500 whitespace-nowrap">★ {member.performanceRating}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+                    <span className="text-slate-500">
+                      Showing <strong className="text-slate-800">{(staffPage - 1) * staffPageSize + 1}</strong> to{" "}
+                      <strong className="text-slate-800">{Math.min(staffPage * staffPageSize, staffMembers.length)}</strong> of{" "}
+                      <strong className="text-slate-800">{staffMembers.length}</strong> staff members
+                    </span>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setStaffPage((p) => Math.max(1, p - 1))}
+                        disabled={staffPage === 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <Icons.ChevronLeft />
+                        <span>Previous</span>
+                      </button>
+
+                      <span className="font-semibold text-slate-800 px-2">
+                        Page {staffPage} of {totalStaffPages}
+                      </span>
+
+                      <button
+                        onClick={() => setStaffPage((p) => Math.min(totalStaffPages, p + 1))}
+                        disabled={staffPage >= totalStaffPages}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>Next</span>
+                        <Icons.ChevronRight />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. TOP 5 PERFORMERS SUB-TAB */}
+              {staffSubTab === "performers" && staffPerformers && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
+                    <span className="text-xl">🏆</span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Top 5 Performing Employees</h3>
+                      <p className="text-xs text-slate-500">Ranked by performance rating and hours contributed this month</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {staffPerformers.top5.map((member: any, idx: number) => (
+                      <div key={member.id} className="flex items-center space-x-4 bg-gradient-to-r from-emerald-50 to-teal-50/60 p-4 rounded-xl border border-emerald-200">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-white text-sm shrink-0 ${
+                          idx === 0 ? 'bg-amber-400 shadow-lg shadow-amber-200' : idx === 1 ? 'bg-slate-400' : idx === 2 ? 'bg-amber-700' : 'bg-emerald-500'
+                        }`}>
+                          #{idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900 text-sm">{member.name}</span>
+                            <span className="font-black text-emerald-600 text-sm">★ {member.performanceRating}</span>
+                          </div>
+                          <div className="flex items-center space-x-3 text-[11px] text-slate-500 mt-0.5">
+                            <span>{member.role}</span>
+                            <span>·</span>
+                            <span>{member.city}</span>
+                            <span>·</span>
+                            <span>🕐 {member.loginTime} – 🕔 {member.logoffTime}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 mt-1 font-medium truncate">{member.assignedJob}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-bold text-emerald-700">{member.hoursWorked}h</div>
+                          <div className="text-[10px] text-slate-400">hrs worked</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. BOTTOM 5 UNDERPERFORMERS SUB-TAB */}
+              {staffSubTab === "underperformers" && staffPerformers && (
+                <div className="bg-white rounded-2xl p-5 border border-rose-200 shadow-sm space-y-4">
+                  <div className="flex items-center space-x-2 border-b border-rose-100 pb-3">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Bottom 5 Underperforming Employees</h3>
+                      <p className="text-xs text-slate-500">Staff members needing coaching, reassignment, or performance improvement plans</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {staffPerformers.bottom5.map((member: any, idx: number) => (
+                      <div key={member.id} className="bg-gradient-to-r from-rose-50/80 to-amber-50/60 p-4 rounded-xl border border-rose-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-9 h-9 rounded-full bg-rose-100 border border-rose-300 flex items-center justify-center font-black text-rose-600 text-sm shrink-0">
+                              #{idx + 1}
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-900 text-sm block">{member.name}</span>
+                              <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+                                <span>{member.role}</span>
+                                <span>·</span>
+                                <span>{member.city}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-rose-600 text-sm">★ {member.performanceRating}</span>
+                            <div className="text-[10px] text-slate-400">{member.hoursWorked}h worked</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4 text-[11px] text-slate-500">
+                          <span>🕐 Login: <strong className="text-slate-700">{member.loginTime}</strong></span>
+                          <span>🕔 Logoff: <strong className="text-slate-700">{member.logoffTime}</strong></span>
+                          <span>📋 {member.assignedJob}</span>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
+                          <span className="font-bold">AI Diagnostic: </span>{member.diagnosticNote}
+                        </div>
+                        <div className="text-[11px] text-indigo-700 font-semibold">
+                          💡 Recommended: {member.recommendedJobAllocation}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. JOB ALLOCATION SUB-TAB */}
+              {staffSubTab === "allocate" && staffPerformers && (
+                <div className="bg-white rounded-2xl p-5 border border-violet-200 shadow-sm space-y-4">
+                  <div className="flex items-center space-x-2 border-b border-violet-100 pb-3">
+                    <span className="text-xl">📋</span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">AI-Assisted Job Allocation Manager</h3>
+                      <p className="text-xs text-slate-500">Assign or update job roles, shift types, and login/logoff times for any staff member</p>
+                    </div>
+                  </div>
+
+                  {allocationSuccess && (
+                    <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold rounded-xl p-3 flex items-center space-x-2">
+                      <span>✅</span><span>{allocationSuccess}</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {staffMembers.slice(0, 15).map((member: any) => (
+                      <div key={member.id} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                        <div className="flex items-center justify-between p-3">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 rounded-full bg-violet-100 border border-violet-300 flex items-center justify-center font-bold text-violet-700 text-xs shrink-0">
+                              {member.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-slate-900">{member.name}</div>
+                              <div className="text-[11px] text-slate-500">{member.role} · {member.city} · <span className="text-slate-600 font-medium truncate">{member.assignedJob}</span></div>
+                              <div className="text-[11px] text-slate-500">🕐 {member.loginTime} – 🕔 {member.logoffTime} · {member.shiftType} Shift</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setAllocatingStaffId(allocatingStaffId === member.id ? null : member.id);
+                              setAllocatingJob(member.assignedJob);
+                              setAllocatingShift(member.shiftType);
+                              setAllocatingLoginTime(member.loginTime);
+                              setAllocatingLogoffTime(member.logoffTime);
+                            }}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                              allocatingStaffId === member.id ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100'
+                            }`}
+                          >
+                            {allocatingStaffId === member.id ? '✕ Cancel' : '✎ Allocate'}
+                          </button>
+                        </div>
+
+                        {allocatingStaffId === member.id && (
+                          <div className="border-t border-violet-100 p-4 bg-violet-50/50 space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Assign Job Role</label>
+                                <select
+                                  value={allocatingJob}
+                                  onChange={(e) => setAllocatingJob(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-300 text-xs rounded-lg text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                >
+                                  {staffPerformers.availableJobs.map((job: string) => (
+                                    <option key={job} value={job}>{job}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Shift Type</label>
+                                <select
+                                  value={allocatingShift}
+                                  onChange={(e) => setAllocatingShift(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-300 text-xs rounded-lg text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                >
+                                  <option value="Morning">Morning</option>
+                                  <option value="Evening">Evening</option>
+                                  <option value="Night">Night</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Login Time</label>
+                                <input
+                                  type="text"
+                                  value={allocatingLoginTime}
+                                  onChange={(e) => setAllocatingLoginTime(e.target.value)}
+                                  placeholder="e.g. 08:00 AM"
+                                  className="w-full px-3 py-2 bg-white border border-slate-300 text-xs rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">Logoff Time</label>
+                                <input
+                                  type="text"
+                                  value={allocatingLogoffTime}
+                                  onChange={(e) => setAllocatingLogoffTime(e.target.value)}
+                                  placeholder="e.g. 04:30 PM"
+                                  className="w-full px-3 py-2 bg-white border border-slate-300 text-xs rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                />
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleAllocateJob(member.id)}
+                              disabled={!allocatingJob}
+                              className="w-full py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              ✅ Confirm Job Allocation
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 5. AI LABOR EFFICIENCY RATIO SUB-TAB */}
+              {staffSubTab === "ai" && staffInsights && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <h3 className="text-base font-bold text-slate-900">AI Labor Cost & Efficiency Optimization</h3>
+                  <ul className="space-y-2 text-xs text-slate-700">
+                    {staffInsights.optimizationSuggestions.map((sug: string, idx: number) => (
+                      <li key={idx} className="flex items-start space-x-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <span className="text-indigo-600 font-bold">•</span>
+                        <span>{sug}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* 6. SHIFT ROSTER DISTRIBUTION SUB-TAB */}
+              {staffSubTab === "shifts" && staffInsights && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                  <h3 className="text-base font-bold text-slate-900">Shift Coverage Roster Distribution</h3>
+                  <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                    <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100">
+                      <span className="text-slate-500 block text-[10px] font-bold">MORNING SHIFT</span>
+                      <span className="font-black text-indigo-700 text-2xl mt-1 block">{staffInsights.summary.shiftDistribution.Morning || 0}</span>
+                      <span className="text-[10px] text-slate-400">8 AM - 4 PM</span>
+                    </div>
+                    <div className="bg-blue-50/60 p-4 rounded-xl border border-blue-100">
+                      <span className="text-slate-500 block text-[10px] font-bold">EVENING SHIFT</span>
+                      <span className="font-black text-blue-700 text-2xl mt-1 block">{staffInsights.summary.shiftDistribution.Evening || 0}</span>
+                      <span className="text-[10px] text-slate-400">4 PM - 12 AM</span>
+                    </div>
+                    <div className="bg-slate-100 p-4 rounded-xl border border-slate-200">
+                      <span className="text-slate-500 block text-[10px] font-bold">NIGHT SHIFT</span>
+                      <span className="font-black text-slate-700 text-2xl mt-1 block">{staffInsights.summary.shiftDistribution.Night || 0}</span>
+                      <span className="text-[10px] text-slate-400">12 AM - 8 AM</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 6: MARKETING AGENT */}
+          {activeStepId === 6 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              {/* Feature Sub-Tabs Toggles */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMarketingSubTab("overview")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📈 Campaign Performance</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("powerbi")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "powerbi" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>📊 PowerBI Embedded</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("ai")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "ai" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>🤖 AI Marketing Engine</span>
+                </button>
+                <button
+                  onClick={() => setMarketingSubTab("recommendations")}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    marketingSubTab === "recommendations" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>💡 AI Recommendations Panel ({aiRecommendations.length})</span>
+                </button>
+              </div>
+
+              {/* KPIs Header */}
+              {marketingKpis && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Net ROI</span>
+                    <div className="text-xl font-black text-emerald-600 mt-1">₹{marketingKpis.netRoi.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Efficiency: {marketingKpis.roas}x ROAS</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Total Attributed Revenue</span>
+                    <div className="text-xl font-black text-slate-900 mt-1">₹{marketingKpis.attributedRevenue.toLocaleString('en-IN')}</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Total Spend: ₹{marketingKpis.totalSpend.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Avg CTR / Conv Rate</span>
+                    <div className="text-xl font-black text-indigo-600 mt-1">{marketingKpis.averageCtr}% / {marketingKpis.averageConvRate}%</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Interactive clicks</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                    <span className="text-xs text-slate-500 font-medium">Customer Engagement Index</span>
+                    <div className="text-xl font-black text-cyan-600 mt-1">{marketingKpis.engagementIndex} / 100</div>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">{marketingKpis.totalCustomers} profiles tracked</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 1. CAMPAIGN PERFORMANCE OVERVIEW */}
+              {marketingSubTab === "overview" && (
+                <div className="space-y-4">
+                  {/* Campaign Rankings Grid */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Campaign Rankings & Sales Impact</h3>
+                      <p className="text-xs text-slate-500">Live ROI tracking and attribution metrics across franchise promotional campaigns</p>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                            <th className="py-3 px-4">Campaign Name</th>
+                            <th className="py-3 px-4">Channel</th>
+                            <th className="py-3 px-4">Budget</th>
+                            <th className="py-3 px-4">Revenue</th>
+                            <th className="py-3 px-4">ROAS</th>
+                            <th className="py-3 px-4">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {campaigns.map((camp) => {
+                            const rep = camp.roi_reports[0] || { attributed_revenue: 0, efficiency_ratio: 0 };
+                            const roas = rep.efficiency_ratio;
+                            let statusBadge = "bg-slate-100 text-slate-600";
+                            if (camp.status === "Active") statusBadge = "bg-blue-100 text-blue-800 animate-pulse";
+                            else if (camp.status === "Completed") statusBadge = "bg-emerald-100 text-emerald-800";
+                            else if (camp.status === "Draft") statusBadge = "bg-amber-100 text-amber-800";
+
+                            return (
+                              <tr key={camp.id} className="hover:bg-slate-50/50">
+                                <td className="py-3 px-4 font-bold text-slate-800">{camp.name}</td>
+                                <td className="py-3 px-4 text-slate-600">{camp.channel}</td>
+                                <td className="py-3 px-4 font-semibold text-slate-700">₹{camp.budget.toLocaleString('en-IN')}</td>
+                                <td className="py-3 px-4 font-semibold text-emerald-600">₹{rep.attributed_revenue.toLocaleString('en-IN')}</td>
+                                <td className={`py-3 px-4 font-bold ${roas >= 2.0 ? "text-emerald-600" : roas >= 1.0 ? "text-indigo-600" : "text-rose-600"}`}>
+                                  {roas > 0 ? `${roas}x` : "-"}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${statusBadge}`}>
+                                    {camp.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Trend chart */}
+                  {campaigns.length > 0 && (
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                      <h3 className="text-base font-bold text-slate-900">Campaign Conversions Performance Trends</h3>
+                      <p className="text-xs text-slate-500">Active click-throughs and customer conversions tracked across promotional activities</p>
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={campaigns.flatMap(c => c.marketing_metrics || []).slice(0, 30)}
+                            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="colorConvs" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="recorded_date" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                            <Tooltip formatter={(value: any) => [Number(value).toLocaleString(), '']} />
+                            <Area type="monotone" dataKey="clicks" stroke="#4f46e5" strokeWidth={2} fillOpacity={1} fill="url(#colorClicks)" name="Clicks" />
+                            <Area type="monotone" dataKey="pos_sales_conversions" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorConvs)" name="Conversions" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. POWERBI EMBEDDED VISUALIZATION */}
+              {marketingSubTab === "powerbi" && (
+                <div className="bg-slate-900 text-slate-100 rounded-2xl border border-slate-700/60 shadow-lg overflow-hidden flex flex-col h-[520px]">
+                  {/* Mock PowerBI Toolbar */}
+                  <div className="bg-slate-800/80 px-4 py-2 border-b border-slate-700/60 flex items-center justify-between text-xs font-semibold">
+                    <div className="flex items-center space-x-3">
+                      <span className="bg-yellow-500 text-slate-950 font-black px-1.5 py-0.5 rounded text-[10px] tracking-wider uppercase shadow-xs">Power BI</span>
+                      <span className="text-slate-300">Marketing ROI Analysis - Embedded Dashboard</span>
+                    </div>
+                    <div className="flex items-center space-x-4 text-[11px] text-slate-400">
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🔄</span> <span>Refresh</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖨️</span> <span>Print</span></button>
+                      <button type="button" className="hover:text-white flex items-center space-x-1 cursor-pointer"><span className="scale-75">🖥️</span> <span>Full Screen</span></button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-12 overflow-hidden bg-slate-950 p-4 gap-4">
+                    {/* Filters Pane */}
+                    <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-4 text-xs overflow-y-auto">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1.5">Filters</div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Campaign Status</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Statuses</option>
+                          <option>Active</option>
+                          <option>Completed</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase block">Marketing Channel</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-300">
+                          <option>All Channels</option>
+                          <option>Social Media</option>
+                          <option>POS Coupons</option>
+                          <option>CRM System Data</option>
+                        </select>
+                      </div>
+                      <div className="pt-2 border-t border-slate-800 space-y-2">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dashboard KPI Metrics</div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Top Channel</span>
+                          <span className="font-black text-amber-500 text-sm mt-0.5 block">POS Coupons</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[9px] text-slate-500 block">Acquisition Efficiency</span>
+                          <span className="font-black text-emerald-500 text-sm mt-0.5 block">1.82x Net Lift</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Report Canvas */}
+                    <div className="col-span-9 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4 overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-100">Attribution Revenue by Marketing Channel</h4>
+                          <p className="text-[10px] text-slate-500">Cross-channel efficiency comparison and budget mapping</p>
+                        </div>
+                        <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">Status: Live Sync</span>
+                      </div>
+
+                      {/* Mock Chart Area */}
+                      <div className="flex-1 min-h-[220px]">
+                        {campaigns.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={campaigns.map(c => {
+                                const rep = c.roi_reports[0] || { total_spend: c.budget, attributed_revenue: 0 };
+                                return {
+                                  name: c.name.slice(0, 14) + "..",
+                                  Spend: rep.total_spend,
+                                  Revenue: rep.attributed_revenue
+                                };
+                              })}
+                              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} stroke="#334155" />
+                              <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff' }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar dataKey="Spend" fill="#6366f1" name="Budget Spend" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="Revenue" fill="#10b981" name="Attributed Revenue" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-slate-500 text-xs">No active campaign data loaded.</div>
+                        )}
+                      </div>
+
+                      {/* Mini cards */}
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Total Interactions</span>
+                          <span className="text-base font-black text-slate-100 mt-1 block">42,500</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Sentiment Score</span>
+                          <span className="text-base font-black text-emerald-400 mt-1 block">78.5% Positive</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-center">
+                          <span className="text-[9px] text-slate-500 block">Target Conversion Rate</span>
+                          <span className="text-base font-black text-indigo-400 mt-1 block">22.4%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. AI MARKETING ENGINE */}
+              {marketingSubTab === "ai" && (
+                <div className="space-y-6">
+                  {/* Segmentation and Predictor Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Segmentation Results */}
+                    {aiSegments && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">K-Means Customer Segmentation</h3>
+                          <p className="text-xs text-slate-500">Clustering based on total spend, visit frequency, and customer age profile</p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          {Object.keys(aiSegments.stats || {}).map((segKey) => {
+                            const stat = aiSegments.stats[segKey];
+                            let cardColor = "border-slate-100 bg-slate-50/50";
+                            let textColor = "text-slate-900";
+                            if (segKey === "High-Value") { cardColor = "border-emerald-200 bg-emerald-50/20"; textColor = "text-emerald-700"; }
+                            else if (segKey === "Churn-Risk") { cardColor = "border-rose-200 bg-rose-50/20"; textColor = "text-rose-700"; }
+
+                            return (
+                              <div key={segKey} className={`p-3 rounded-xl border text-center ${cardColor}`}>
+                                <span className="text-[10px] text-slate-500 font-bold block uppercase">{segKey}</span>
+                                <span className={`text-lg font-black mt-1 block ${textColor}`}>{stat.count}</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Spend: ₹{Math.round(stat.average_spend)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Mini listing */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden text-[11px]">
+                          <div className="bg-slate-50 px-3 py-2 border-b border-slate-100 font-bold text-slate-600 flex justify-between">
+                            <span>Sample Customer Name</span>
+                            <span>Engagement Segment</span>
+                          </div>
+                          <div className="divide-y divide-slate-50 max-h-32 overflow-y-auto">
+                            {aiSegments.customers?.slice(0, 5).map((cust: any, idx: number) => (
+                              <div key={idx} className="px-3 py-2 flex justify-between hover:bg-slate-50/30">
+                                <span className="text-slate-800 font-semibold">{cust.name}</span>
+                                <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
+                                  cust.segment === 'High-Value' ? "bg-emerald-100 text-emerald-800" : cust.segment === 'Churn-Risk' ? "bg-rose-100 text-rose-800" : "bg-blue-100 text-blue-800"
+                                }`}>
+                                  {cust.segment}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Campaign Performance Predictor */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Campaign Success Predictor</h3>
+                        <p className="text-xs text-slate-500">Evaluate prospective campaign efficiency and impressions prior to launching</p>
+                      </div>
+
+                      <form onSubmit={handlePredictCampaign} className="space-y-3.5 text-xs text-slate-700">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Marketing Channel</label>
+                            <select
+                              value={predictChannel}
+                              onChange={(e) => setPredictChannel(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 cursor-pointer text-slate-800"
+                            >
+                              <option value="Social Media">Social Media</option>
+                              <option value="POS Coupons">POS Coupons</option>
+                              <option value="CRM System Data">CRM System Data</option>
+                              <option value="Google Analytics">Google Analytics</option>
+                              <option value="Website Analytics">Website Analytics</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="font-bold text-slate-600 block">Target Audience Budget (₹)</label>
+                            <input
+                              type="number"
+                              value={predictBudget}
+                              onChange={(e) => setPredictBudget(Number(e.target.value))}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 font-semibold"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={rerunningAi}
+                          className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-lg shadow-sm cursor-pointer hover:bg-indigo-700 transition-all disabled:bg-indigo-400"
+                        >
+                          {rerunningAi ? "Running Regression Predictor..." : "🔍 Run Prediction Algorithm"}
+                        </button>
+                      </form>
+
+                      {/* Prediction Result Display */}
+                      {predictionResult ? (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 grid grid-cols-3 gap-2.5 text-[11px] animate-in fade-in duration-200">
+                          <div className="col-span-3 font-bold text-slate-800 border-b border-slate-200/60 pb-1 flex justify-between">
+                            <span>Predicted Impact ({predictionResult.channel})</span>
+                            <span className="text-indigo-600 uppercase text-[9px] font-black">{predictionResult.effectiveness_tag}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">CONVERSIONS</span>
+                            <span className="font-black text-slate-800 text-sm mt-0.5 block">{predictionResult.predicted_conversions}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST REVENUE</span>
+                            <span className="font-black text-emerald-600 text-sm mt-0.5 block">₹{Math.round(predictionResult.attributed_revenue).toLocaleString('en-IN')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[9px] font-bold">EST ROAS</span>
+                            <span className="font-black text-indigo-600 text-sm mt-0.5 block">{predictionResult.roas}x</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center text-slate-400 text-xs py-6">
+                          Select inputs above to evaluate simulated campaign ROI.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sentiment and Forecasting Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Sentiment NLP */}
+                    {aiSentiment && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Social Media Feedback Sentiment (NLP)</h3>
+                          <p className="text-xs text-slate-500">Live NLP sentiment classification of customer comments and store mentions</p>
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-center w-24">
+                            <span className="text-[10px] text-slate-500 block font-bold">INDEX</span>
+                            <span className="font-black text-slate-800 text-xl mt-1 block">{Math.round(aiSentiment.average_sentiment_score * 100)}%</span>
+                          </div>
+
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-slate-500">Feedback Distribution</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                              <div className="bg-emerald-500" style={{ width: `${(aiSentiment.sentiment_distribution.Positive / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-slate-300" style={{ width: `${(aiSentiment.sentiment_distribution.Neutral / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                              <div className="bg-rose-500" style={{ width: `${(aiSentiment.sentiment_distribution.Negative / (aiSentiment.comments?.length || 1)) * 100}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold">
+                              <span className="text-emerald-600 flex items-center">● Pos ({aiSentiment.sentiment_distribution.Positive})</span>
+                              <span className="text-slate-500 flex items-center">● Neu ({aiSentiment.sentiment_distribution.Neutral})</span>
+                              <span className="text-rose-600 flex items-center">● Neg ({aiSentiment.sentiment_distribution.Negative})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Comments listing */}
+                        <div className="divide-y divide-slate-50 border border-slate-100 rounded-xl max-h-32 overflow-y-auto text-[10px]">
+                          {aiSentiment.comments?.map((comment: any, idx: number) => (
+                            <div key={idx} className="p-2 flex justify-between hover:bg-slate-50/50">
+                              <span className="text-slate-700 truncate max-w-sm font-semibold">"{comment.text}"</span>
+                              <span className={`font-bold px-1 py-0.5 rounded text-[8px] tracking-wider ${
+                                comment.sentiment === 'Positive' ? "bg-emerald-100 text-emerald-800" : comment.sentiment === 'Negative' ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-800"
+                              }`}>
+                                {comment.sentiment}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Time Series Forecasting */}
+                    {aiForecast.length > 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Revenue & Engagement 14-Day Forecast</h3>
+                          <p className="text-xs text-slate-500">ML Random Forest trend projection for marketing-attributed revenue volume</p>
+                        </div>
+
+                        <div className="h-48 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={aiForecast} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                              <XAxis dataKey="date" tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <YAxis tick={{ fontSize: 9 }} stroke="#94a3b8" />
+                              <Tooltip formatter={(value: any) => [`₹${Number(value).toLocaleString()}`, '']} />
+                              <Line type="monotone" dataKey="predicted_revenue" stroke="#7c3aed" strokeWidth={2.5} name="Forecast Revenue" dot={{ r: 2 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. AI RECOMMENDATIONS PANEL */}
+              {marketingSubTab === "recommendations" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">AI-Generated Campaign Optimization Board</h3>
+                      <p className="text-xs text-slate-500">Real-time budget reallocation advice and targeted audience refinements</p>
+                    </div>
+                    <span className="text-[10px] text-rose-500 bg-rose-50 border border-rose-100 font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Action Required</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {aiRecommendations.map((rec) => {
+                      const isHigh = rec.priority === "High";
+                      const isApplying = applyingRecId === rec.id;
+
+                      return (
+                        <div
+                          key={rec.id}
+                          className={`bg-white rounded-2xl border p-5 space-y-4 shadow-sm flex flex-col justify-between transition-all duration-150 ${
+                            isHigh ? "border-rose-200 bg-rose-50/5" : "border-slate-200"
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                isHigh ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {rec.priority} Priority
+                              </span>
+                              <span className="text-[10px] font-mono text-emerald-600 font-bold">{rec.estimated_roi_impact}</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{rec.type}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{rec.description}</p>
+                          </div>
+
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyRecommendation(rec)}
+                              disabled={isApplying}
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs shadow-xs cursor-pointer transition-all flex items-center justify-center space-x-1 disabled:bg-slate-600"
+                            >
+                              {isApplying ? (
+                                <>
+                                  <span className="animate-spin text-xs">🌀</span>
+                                  <span>Applying Adjustments...</span>
+                                </>
+                              ) : (
+                                <span>Apply Optimization Suggestion</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 7: AUDIT AGENT */}
+          {activeStepId === 7 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+
+              {/* Sub-tab Navigation */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                {([
+                  { key: "sessions",   label: "📋 Audit Sessions" },
+                  { key: "checklist",  label: "✅ SOP Checklist" },
+                  { key: "inventory",  label: "📦 Inventory Variance" },
+                  { key: "pos",        label: "💳 POS Discrepancies" },
+                  { key: "shifts",     label: "👤 Shift Verification" },
+                  { key: "incidents",  label: "🔧 Facility Incidents" },
+                  { key: "anomalies",  label: "⚠️ Anomaly Flags" },
+                  { key: "report",     label: "📊 Audit Report" },
+                ] as const).map((tab) => (
+                  <button
+                    key={tab.key}
+                    id={`audit-tab-${tab.key}`}
+                    onClick={() => setAuditSubTab(tab.key)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                      auditSubTab === tab.key
+                        ? tab.key === "anomalies"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* KPI Summary Cards */}
+              {!auditLoading && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    {
+                      label: "Network Compliance",
+                      value: auditSessions.length > 0
+                        ? `${Math.round(auditSessions.filter(s => s.overallScore > 0).reduce((acc, s) => acc + s.overallScore, 0) / Math.max(auditSessions.filter(s => s.overallScore > 0).length, 1))}%`
+                        : "—",
+                      sub: "Avg. across completed sessions",
+                      color: "text-indigo-600",
+                    },
+                    {
+                      label: "Passed / Failed",
+                      value: `${auditSessions.filter(s => s.passFail === "Pass").length} / ${auditSessions.filter(s => s.passFail === "Fail").length}`,
+                      sub: `${auditSessions.filter(s => s.status === "Escalated").length} escalated`,
+                      color: "text-emerald-600",
+                    },
+                    {
+                      label: "Critical Anomalies",
+                      value: auditAnomalies?.summary?.critical ?? "—",
+                      sub: `${auditAnomalies?.summary?.total ?? 0} total flags`,
+                      color: "text-rose-600",
+                    },
+                    {
+                      label: "Open Incidents",
+                      value: auditIncidents?.summary?.open ?? "—",
+                      sub: `${auditIncidents?.summary?.critical ?? 0} critical priority`,
+                      color: "text-amber-600",
+                    },
+                  ].map((kpi, i) => (
+                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{kpi.label}</span>
+                      <span className={`text-2xl font-black mt-1 block ${kpi.color}`}>{kpi.value}</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block">{kpi.sub}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {auditLoading && (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-400 text-sm">
+                  Loading audit data...
+                </div>
+              )}
+
+              {/* ── 1. AUDIT SESSIONS ─────────────────────────────── */}
+              {auditSubTab === "sessions" && !auditLoading && (
+                <div className="space-y-4">
+                  {/* Create new session form */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-3">🆕 Start New Audit Session</h3>
+                    <form onSubmit={handleCreateAuditSession} className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Outlet</label>
+                        <select
+                          value={newAuditForm.outletId}
+                          onChange={e => setNewAuditForm(f => ({ ...f, outletId: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 cursor-pointer"
+                        >
+                          <option value="">Select Outlet...</option>
+                          {outlets.map(o => <option key={o.id} value={o.id}>{o.outlet_name} — {o.city}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Auditor Name</label>
+                        <input
+                          type="text"
+                          placeholder="Full name + role"
+                          value={newAuditForm.auditorName}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditorName: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Audit Date</label>
+                        <input
+                          type="date"
+                          value={newAuditForm.auditDate}
+                          onChange={e => setNewAuditForm(f => ({ ...f, auditDate: e.target.value }))}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="submit"
+                          disabled={creatingAudit}
+                          id="btn-create-audit-session"
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl cursor-pointer transition-all disabled:bg-indigo-400"
+                        >
+                          {creatingAudit ? "Creating..." : "➕ Start Audit"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Sessions table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">All Audit Sessions</h3>
+                      <span className="text-[10px] text-slate-400 font-mono">{auditSessions.length} total sessions</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-left">Auditor</th>
+                            <th className="px-4 py-2.5 text-left">Date</th>
+                            <th className="px-4 py-2.5 text-center">Score</th>
+                            <th className="px-4 py-2.5 text-center">Result</th>
+                            <th className="px-4 py-2.5 text-center">Status</th>
+                            <th className="px-4 py-2.5 text-center">Findings</th>
+                            <th className="px-4 py-2.5 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {auditSessions.map((session: any) => (
+                            <tr key={session.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{session.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{session.city}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 max-w-[140px] truncate">{session.auditorName}</td>
+                              <td className="px-4 py-3 text-slate-600 font-mono">{session.auditDate}</td>
+                              <td className="px-4 py-3 text-center">
+                                {session.overallScore > 0 ? (
+                                  <span className={`font-black text-sm ${session.overallScore >= 80 ? "text-emerald-600" : session.overallScore >= 70 ? "text-amber-600" : "text-rose-600"}`}>
+                                    {session.overallScore.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.passFail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                                  session.passFail === "Fail" ? "bg-rose-100 text-rose-700" :
+                                  "bg-slate-100 text-slate-600"
+                                }`}>
+                                  {session.passFail}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  session.status === "Completed" ? "bg-blue-100 text-blue-700" :
+                                  session.status === "Escalated" ? "bg-red-100 text-red-700" :
+                                  "bg-amber-100 text-amber-700"
+                                }`}>
+                                  {session.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {session.criticalFindings > 0 ? (
+                                  <span className="text-rose-600 font-bold">{session.criticalFindings} 🔴</span>
+                                ) : (
+                                  <span className="text-slate-400">{session.totalFindings}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  id={`btn-load-session-${session.id}`}
+                                  onClick={() => { handleLoadAuditSession(session.id); setAuditSubTab("checklist"); }}
+                                  className="px-3 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-slate-700 transition-all"
+                                >
+                                  Open →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 2. SOP CHECKLIST ──────────────────────────────── */}
+              {auditSubTab === "checklist" && !auditLoading && (
+                <div className="space-y-4">
+                  {!activeAuditSession ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-8 text-center text-slate-400 text-sm space-y-3">
+                      <div className="text-3xl">📋</div>
+                      <p>No audit session loaded. Select a session from the Sessions tab, or create a new one.</p>
+                      <button onClick={() => setAuditSubTab("sessions")} className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-indigo-700">
+                        Go to Sessions
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Session header */}
+                      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">{activeAuditSession.outletName} — {activeAuditSession.audit_date}</h3>
+                          <p className="text-[10px] text-slate-400">Auditor: {activeAuditSession.auditor_name} · Session #{activeAuditSession.id}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* Score breakdown mini cards */}
+                          {[
+                            { label: "Hygiene", val: activeAuditSession.hygiene_score },
+                            { label: "Food Safety", val: activeAuditSession.food_safety_score },
+                            { label: "SOP", val: activeAuditSession.sop_score },
+                          ].map(s => (
+                            <div key={s.label} className="text-center bg-slate-50 rounded-xl px-3 py-1.5 border border-slate-100">
+                              <span className="text-[9px] text-slate-400 block">{s.label}</span>
+                              <span className={`text-sm font-black ${s.val >= 80 ? "text-emerald-600" : s.val >= 70 ? "text-amber-600" : s.val > 0 ? "text-rose-600" : "text-slate-300"}`}>
+                                {s.val > 0 ? `${s.val}%` : "—"}
+                              </span>
+                            </div>
+                          ))}
+                          <span className={`px-3 py-1.5 rounded-full text-[10px] font-bold ${
+                            activeAuditSession.pass_fail === "Pass" ? "bg-emerald-100 text-emerald-700" :
+                            activeAuditSession.pass_fail === "Fail" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {activeAuditSession.overall_score > 0 ? `${activeAuditSession.overall_score}/100` : "Pending"}
+                          </span>
+                          {activeAuditSession.status === "In Progress" && (
+                            <button
+                              id={`btn-complete-session-${activeAuditSession.id}`}
+                              onClick={() => handleCompleteAuditSession(activeAuditSession.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-xl cursor-pointer transition-all"
+                            >
+                              ✓ Finalize Audit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Checklist by category */}
+                      {auditSessionLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 text-sm">Loading checklist...</div>
+                      ) : (
+                        ["Hygiene", "Food Safety", "Opening Procedure", "Closing Procedure", "SOP"].map(category => {
+                          const items = activeAuditSession.checklist_items?.filter((i: any) => i.category === category) || [];
+                          const passed = items.filter((i: any) => i.answer === "Pass").length;
+                          const failed = items.filter((i: any) => i.answer === "Fail").length;
+                          return (
+                            <div key={category} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                              <div className="bg-slate-50 px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-slate-700">{category}</h4>
+                                <div className="flex gap-2 text-[10px] font-bold">
+                                  <span className="text-emerald-600">{passed} Pass</span>
+                                  <span className="text-rose-600">{failed} Fail</span>
+                                  <span className="text-slate-400">{items.filter((i:any) => i.answer === "Pending").length} Pending</span>
+                                </div>
+                              </div>
+                              <div className="divide-y divide-slate-50">
+                                {items.map((item: any) => (
+                                  <div key={item.id} className={`px-5 py-3 flex items-center justify-between gap-4 hover:bg-slate-50/50 ${item.answer === "Fail" ? "border-l-4 border-rose-400" : item.answer === "Pass" ? "border-l-4 border-emerald-400" : "border-l-4 border-slate-200"}`}>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs text-slate-800 font-medium leading-relaxed">{item.question}</p>
+                                      {item.notes && <p className="text-[10px] text-rose-600 mt-0.5 italic">{item.notes}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[9px] text-slate-400 font-bold">Wt:{item.score_weight}</span>
+                                      {(["Pass", "Fail", "N/A"] as const).map(ans => (
+                                        <button
+                                          key={ans}
+                                          id={`checklist-${item.id}-${ans}`}
+                                          disabled={checklistUpdating === item.id || activeAuditSession.status !== "In Progress"}
+                                          onClick={() => handleUpdateChecklistItem(item.id, ans)}
+                                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all border ${
+                                            item.answer === ans
+                                              ? ans === "Pass" ? "bg-emerald-500 text-white border-emerald-500"
+                                              : ans === "Fail" ? "bg-rose-500 text-white border-rose-500"
+                                              : "bg-slate-500 text-white border-slate-500"
+                                              : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"
+                                          } disabled:opacity-50`}
+                                        >
+                                          {ans}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 3. INVENTORY VARIANCE ─────────────────────────── */}
+              {auditSubTab === "inventory" && !auditLoading && auditInventoryVariance && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: "Items Audited", value: auditInventoryVariance.summary?.totalItems ?? 0, color: "text-slate-900" },
+                      { label: "Critical Variance", value: auditInventoryVariance.summary?.criticalVariance ?? 0, color: "text-rose-600" },
+                      { label: "High Variance", value: auditInventoryVariance.summary?.highVariance ?? 0, color: "text-amber-600" },
+                      { label: "Within Normal", value: auditInventoryVariance.summary?.normal ?? 0, color: "text-emerald-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900">Stock Variance Analysis</h3>
+                      <span className="text-[10px] text-slate-400">Physical stock vs POS-estimated consumption</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left">Item</th>
+                            <th className="px-4 py-2.5 text-left">Outlet</th>
+                            <th className="px-4 py-2.5 text-center">Current Stock</th>
+                            <th className="px-4 py-2.5 text-center">Est. Consumption</th>
+                            <th className="px-4 py-2.5 text-center">Theoretical</th>
+                            <th className="px-4 py-2.5 text-center">Variance</th>
+                            <th className="px-4 py-2.5 text-center">Var %</th>
+                            <th className="px-4 py-2.5 text-center">Flag</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(auditInventoryVariance.items || []).slice(0, 20).map((item: any) => (
+                            <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{item.itemName}</div>
+                                <div className="text-[10px] text-slate-400">{item.category}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{item.outletName}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-700">{item.currentStock} {item.unit}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.estimatedConsumption}</td>
+                              <td className="px-4 py-3 text-center font-mono text-slate-500">{item.theoreticalRemaining.toFixed(1)}</td>
+                              <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">{item.variance > 0 ? `+${item.variance}` : item.variance}</td>
+                              <td className="px-4 py-3 text-center font-bold">
+                                <span className={item.variancePct > 12 ? "text-rose-600" : item.variancePct > 5 ? "text-amber-600" : "text-emerald-600"}>
+                                  {item.variancePct}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                  item.flagLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                                  item.flagLevel === "High" ? "bg-amber-100 text-amber-700" :
+                                  item.flagLevel === "Medium" ? "bg-blue-100 text-blue-700" :
+                                  "bg-emerald-100 text-emerald-700"
+                                }`}>{item.flagLevel}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 4. POS DISCREPANCIES ──────────────────────────── */}
+              {auditSubTab === "pos" && !auditLoading && auditPosDiscrepancies && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Mismatch (₹)", value: `₹${(auditPosDiscrepancies.summary?.totalMismatch || 0).toLocaleString("en-IN")}`, color: "text-rose-600" },
+                      { label: "Critical Outlets", value: auditPosDiscrepancies.summary?.criticalOutlets ?? 0, color: "text-rose-600" },
+                      { label: "High Risk", value: auditPosDiscrepancies.summary?.highRisk ?? 0, color: "text-amber-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditPosDiscrepancies.discrepancies || []).map((d: any) => (
+                      <div key={d.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${d.riskLevel === "Critical" ? "border-rose-200" : d.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">{d.outletName}</h4>
+                            <p className="text-[10px] text-slate-400">{d.city} · Manager: {d.manager}</p>
+                          </div>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            d.riskLevel === "Critical" ? "bg-rose-100 text-rose-700" :
+                            d.riskLevel === "High" ? "bg-amber-100 text-amber-700" :
+                            d.riskLevel === "Medium" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"
+                          }`}>{d.riskLevel}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">MISMATCH</span>
+                            <span className="font-black text-rose-600">₹{d.mismatch.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">CASH RATIO</span>
+                            <span className="font-black text-amber-600">{d.cashRatio}%</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-slate-400 block text-[9px] font-bold">EST. VOIDS</span>
+                            <span className="font-black text-slate-700">{d.estimatedVoids}</span>
+                          </div>
+                        </div>
+                        {d.overrideFlag && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-800 font-semibold">
+                            ⚠️ {d.overrideFlag}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400 flex gap-4">
+                          <span>Cash: ₹{d.paymentSplit.cash.toLocaleString("en-IN")}</span>
+                          <span>Card: ₹{d.paymentSplit.card.toLocaleString("en-IN")}</span>
+                          <span>UPI: ₹{d.paymentSplit.upi.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 5. SHIFT VERIFICATION ─────────────────────────── */}
+              {auditSubTab === "shifts" && !auditLoading && auditShiftVerification && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: "Total Cert Gaps", value: auditShiftVerification.summary?.totalCertGaps ?? 0, color: "text-rose-600" },
+                      { label: "Understaffed Outlets", value: auditShiftVerification.summary?.understaffedOutlets ?? 0, color: "text-amber-600" },
+                      { label: "Missing Managers", value: auditShiftVerification.summary?.missingManagers ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {(auditShiftVerification.outlets || []).map((outlet: any) => (
+                    <div key={outlet.outletId} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${outlet.riskLevel === "Critical" ? "border-rose-200" : outlet.riskLevel === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900">{outlet.outletName}</h4>
+                          <p className="text-[10px] text-slate-400">{outlet.city} · {outlet.manager}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${outlet.coverageFlag === "Adequate" ? "bg-emerald-100 text-emerald-700" : outlet.coverageFlag === "Borderline" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
+                            {outlet.coverageFlag}
+                          </span>
+                          {!outlet.managerPresent && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">No Manager On-Site</span>
+                          )}
+                          <span className="text-xs font-bold text-slate-600">Attendance: {outlet.attendanceRate}%</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-[11px]">
+                        {[
+                          { label: "Scheduled", val: outlet.scheduled },
+                          { label: "Active", val: outlet.active },
+                          { label: "Morning", val: outlet.shiftBreakdown.morning },
+                          { label: "Evening", val: outlet.shiftBreakdown.evening },
+                        ].map((s, i) => (
+                          <div key={i} className="bg-slate-50 p-2 rounded-xl text-center border border-slate-100">
+                            <span className="text-[9px] text-slate-400 block font-bold">{s.label}</span>
+                            <span className="font-black text-slate-700 text-base">{s.val}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {outlet.certificationGaps.length > 0 && (
+                        <div className="border border-rose-100 rounded-xl overflow-hidden">
+                          <div className="bg-rose-50 px-3 py-1.5 text-[10px] font-bold text-rose-700 uppercase">Certification Gaps ({outlet.certificationGaps.length})</div>
+                          <div className="divide-y divide-rose-50">
+                            {outlet.certificationGaps.slice(0, 4).map((gap: any) => (
+                              <div key={gap.staffId} className="px-3 py-2 flex justify-between text-[10px]">
+                                <span className="font-semibold text-slate-800">{gap.name} ({gap.role})</span>
+                                <span className="text-rose-600 font-bold">Rating: {gap.rating}/5</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── 6. FACILITY INCIDENTS ─────────────────────────── */}
+              {auditSubTab === "incidents" && !auditLoading && auditIncidents && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { label: "Open", value: auditIncidents.summary?.open ?? 0, color: "text-rose-600" },
+                      { label: "In Progress", value: auditIncidents.summary?.inProgress ?? 0, color: "text-amber-600" },
+                      { label: "Resolved", value: auditIncidents.summary?.resolved ?? 0, color: "text-emerald-600" },
+                      { label: "Critical Priority", value: auditIncidents.summary?.critical ?? 0, color: "text-rose-600" },
+                    ].map((k, i) => (
+                      <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">{k.label}</span>
+                        <span className={`text-2xl font-black mt-1 block ${k.color}`}>{k.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(auditIncidents.incidents || []).map((inc: any) => (
+                      <div key={inc.id} className={`bg-white rounded-2xl border shadow-xs p-4 space-y-3 ${inc.priority === "Critical" ? "border-rose-200" : inc.priority === "High" ? "border-amber-200" : "border-slate-200"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.priority === "Critical" ? "bg-rose-100 text-rose-700" : inc.priority === "High" ? "bg-amber-100 text-amber-700" : inc.priority === "Medium" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                                {inc.priority}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600">{inc.incident_type}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${inc.status === "Resolved" ? "bg-emerald-100 text-emerald-700" : inc.status === "In Progress" ? "bg-blue-100 text-blue-700" : "bg-rose-100 text-rose-700"}`}>
+                                {inc.status}
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900">{inc.title}</h4>
+                            <p className="text-[10px] text-slate-500 mt-1">{inc.outletName} · {inc.city}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">{inc.description}</p>
+                        {inc.assigned_to && (
+                          <p className="text-[10px] text-slate-400">Assigned: <span className="font-semibold text-slate-600">{inc.assigned_to}</span></p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          {inc.status !== "In Progress" && inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-progress`} onClick={() => handleUpdateIncident(inc.id, "In Progress")} className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-blue-700 transition-all">
+                              Mark In Progress
+                            </button>
+                          )}
+                          {inc.status !== "Resolved" && (
+                            <button id={`btn-incident-${inc.id}-resolve`} onClick={() => handleUpdateIncident(inc.id, "Resolved")} className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-emerald-700 transition-all">
+                              ✓ Resolve
+                            </button>
+                          )}
+                          {inc.status === "Resolved" && (
+                            <span className="text-[10px] text-emerald-600 font-bold">✓ Resolved {inc.resolved_date ? `on ${inc.resolved_date}` : ""}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 7. ANOMALY FLAGS ──────────────────────────────── */}
+              {auditSubTab === "anomalies" && !auditLoading && auditAnomalies && (
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-2xl border border-slate-700 p-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">AI Anomaly Detection Engine</h3>
+                      <p className="text-[10px] text-slate-400">Cross-domain risk signals from inventory, POS, staffing, and audit sessions</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">CRITICAL</span>
+                        <span className="text-xl font-black text-rose-400">{auditAnomalies.summary?.critical ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">HIGH</span>
+                        <span className="text-xl font-black text-amber-400">{auditAnomalies.summary?.high ?? 0}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] text-slate-400 block">TOTAL</span>
+                        <span className="text-xl font-black text-slate-100">{auditAnomalies.summary?.total ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {(auditAnomalies.anomalies || []).map((anomaly: any) => (
+                      <div key={anomaly.id} className={`bg-white rounded-2xl border shadow-xs p-4 ${anomaly.severity === "Critical" ? "border-rose-200" : "border-amber-200"}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`text-xl shrink-0 ${anomaly.severity === "Critical" ? "text-rose-500" : "text-amber-500"}`}>
+                            {anomaly.severity === "Critical" ? "🔴" : "🟡"}
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${anomaly.severity === "Critical" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                                  {anomaly.severity}
+                                </span>
+                                <h4 className="text-xs font-bold text-slate-900">{anomaly.type}</h4>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono">{anomaly.timestamp}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed">{anomaly.description}</p>
+                            <div className="bg-slate-50 rounded-xl border border-slate-100 px-3 py-2">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Recommended Action</span>
+                              <p className="text-[10px] text-slate-700 font-semibold">{anomaly.action}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(auditAnomalies.anomalies || []).length === 0 && (
+                      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-emerald-600 font-bold text-sm">
+                        ✅ No anomalies detected. Franchise network is operating within normal parameters.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 8. AUDIT REPORT ───────────────────────────────── */}
+              {auditSubTab === "report" && !auditLoading && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Network Compliance Audit Report</h3>
+                        <p className="text-xs text-slate-400">Auto-generated from all completed audit sessions · {new Date().toLocaleDateString("en-IN")}</p>
+                      </div>
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-3 py-1.5 rounded-full border border-indigo-100 uppercase tracking-wider">Live Data</span>
+                    </div>
+
+                    {/* Per-outlet grading */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Outlet-Level Compliance Grades</h4>
+                      <div className="border border-slate-100 rounded-xl overflow-hidden text-xs">
+                        <div className="bg-slate-50 px-4 py-2 grid grid-cols-5 font-bold text-slate-500 text-[10px] uppercase tracking-wider">
+                          <span>Outlet</span>
+                          <span className="text-center">Score</span>
+                          <span className="text-center">Grade</span>
+                          <span className="text-center">Hygiene</span>
+                          <span className="text-center">Food Safety</span>
+                        </div>
+                        <div className="divide-y divide-slate-50">
+                          {auditSessions
+                            .filter((s: any) => s.passFail !== "Pending")
+                            .sort((a: any, b: any) => b.overallScore - a.overallScore)
+                            .map((s: any) => {
+                              const grade = s.overallScore >= 90 ? "A" : s.overallScore >= 80 ? "B" : s.overallScore >= 70 ? "C" : "F";
+                              const gradeColor = grade === "A" ? "text-emerald-600" : grade === "B" ? "text-blue-600" : grade === "C" ? "text-amber-600" : "text-rose-600";
+                              return (
+                                <div key={s.id} className="px-4 py-2.5 grid grid-cols-5 items-center hover:bg-slate-50/50">
+                                  <span className="font-semibold text-slate-800">{s.outletName}</span>
+                                  <span className="text-center font-black text-slate-700">{s.overallScore.toFixed(1)}</span>
+                                  <span className={`text-center font-black text-lg ${gradeColor}`}>{grade}</span>
+                                  <span className="text-center text-slate-600">{s.hygieneScore.toFixed(0)}%</span>
+                                  <span className="text-center text-slate-600">{s.foodSafetyScore.toFixed(0)}%</span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top risks */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Top Risk Areas</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { risk: "Cold Chain Compliance", detail: "2 outlets flagged for temperature deviations above safe threshold", severity: "Critical" },
+                          { risk: "Cash POS Reconciliation", detail: "Payment settlement mismatch detected across 3 outlets", severity: "High" },
+                          { risk: "Staff Certification Gaps", detail: "Multiple staff members below re-certification threshold", severity: "High" },
+                        ].map((r, i) => (
+                          <div key={i} className={`p-3 rounded-xl border text-xs ${r.severity === "Critical" ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"}`}>
+                            <span className={`text-[9px] font-bold uppercase ${r.severity === "Critical" ? "text-rose-600" : "text-amber-600"}`}>{r.severity}</span>
+                            <p className="font-bold text-slate-900 mt-0.5">{r.risk}</p>
+                            <p className="text-[10px] text-slate-600 mt-1">{r.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommended actions */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Recommended Actions</h4>
+                      <div className="space-y-2">
+                        {[
+                          "📦 Immediate refrigeration audit at Anna Nagar Cafe — verify cold chain compliance and replace faulty unit",
+                          "💳 Pull POS void logs for Mumbai Central and cross-reference with supervisor sign-off records",
+                          "👤 Schedule mandatory food safety re-certification for flagged staff before next audit cycle",
+                          "🔧 Prioritize resolution of 2 Critical facility incidents within 24-hour SLA window",
+                          "📋 Establish monthly rolling audit schedule — minimum quarterly visits per outlet",
+                        ].map((action, i) => (
+                          <div key={i} className="bg-slate-50 rounded-xl border border-slate-100 px-4 py-2.5 text-xs text-slate-700 flex items-start gap-2">
+                            <span className="text-slate-400 font-bold text-[10px] shrink-0 mt-0.5">{i + 1}.</span>
+                            <span className="leading-relaxed">{action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 8: FRANCHISE INTELLIGENCE ENGINE */}
+          {activeStepId === 8 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+
+              {/* Sub-Tab Nav Bar */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button onClick={() => setIntelligenceSubTab("overview")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>🧠 Command Center</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("health")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "health" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>💚 Health Score Engine</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("risks")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "risks" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>⚠️ Risk Prediction {intelligenceRisks ? `(${intelligenceRisks.summary?.critical ?? 0} Critical)` : ""}</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("opportunities")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "opportunities" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>📈 Growth Opportunities {intelligenceOpportunities ? `(${intelligenceOpportunities.summary?.total ?? 0})` : ""}</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("recommendations")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "recommendations" ? "bg-violet-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>🎯 Strategic Recommendations {intelligenceRecommendations ? `(${intelligenceRecommendations.summary?.total ?? 0})` : ""}</span>
+                </button>
+              </div>
+
+              {/* Loading State */}
+              {intelligenceLoading && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-12 flex flex-col items-center space-y-4">
+                  <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center animate-pulse">
+                    <Icons.Intelligence />
+                  </div>
+                  <p className="text-sm font-bold text-slate-700">Intelligence Engine Processing…</p>
+                  <p className="text-xs text-slate-400">Consolidating outputs from all agents</p>
+                  <div className="w-64 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full animate-pulse" style={{ width: "70%" }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── 1. COMMAND CENTER OVERVIEW ─────────────────────── */}
+              {intelligenceSubTab === "overview" && !intelligenceLoading && intelligenceConsolidated && (
+                <div className="space-y-4">
+                  {/* Network Summary KPI Banner */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Network Health Score</span>
+                      <div className="text-2xl font-black mt-1" style={{ color: intelligenceConsolidated.networkSummary.avgHealthScore >= 75 ? "#10b981" : intelligenceConsolidated.networkSummary.avgHealthScore >= 55 ? "#f59e0b" : "#ef4444" }}>
+                        {intelligenceConsolidated.networkSummary.avgHealthScore}<span className="text-sm font-semibold text-slate-400">/100</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.totalOutlets} outlets monitored</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Total Network Revenue</span>
+                      <div className="text-xl font-black text-slate-900 mt-1">₹{(intelligenceConsolidated.networkSummary.totalRevenue / 100000).toFixed(1)}L</div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Profit: ₹{(intelligenceConsolidated.networkSummary.totalProfit / 100000).toFixed(1)}L</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Stock Risk Alerts</span>
+                      <div className="text-xl font-black text-amber-600 mt-1">{intelligenceConsolidated.networkSummary.criticalStockAlerts + intelligenceConsolidated.networkSummary.lowStockAlerts}</div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.criticalStockAlerts} critical · {intelligenceConsolidated.networkSummary.lowStockAlerts} low</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Marketing ROAS</span>
+                      <div className={`text-xl font-black mt-1 ${intelligenceConsolidated.networkSummary.marketingRoas >= 2 ? "text-emerald-600" : intelligenceConsolidated.networkSummary.marketingRoas >= 1 ? "text-indigo-600" : "text-rose-600"}`}>
+                        {intelligenceConsolidated.networkSummary.marketingRoas}x
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.totalCampaigns} active campaigns</span>
+                    </div>
+                  </div>
+
+
+
+                  {/* Per-Outlet Consolidated Matrix */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Consolidated Agent Outputs Matrix</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Cross-agent data aggregated per franchise outlet</p>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400">{intelligenceConsolidated.outlets.length} outlets</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Outlet</th>
+                            <th className="px-4 py-3 text-center">Health</th>
+                            <th className="px-4 py-3 text-right">Revenue</th>
+                            <th className="px-4 py-3 text-center">Margin</th>
+                            <th className="px-4 py-3 text-center">Inventory</th>
+                            <th className="px-4 py-3 text-center">Staff Avg</th>
+                            <th className="px-4 py-3 text-center">Audit %</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {intelligenceConsolidated.outlets.map((o: any) => (
+                            <tr key={o.outletId} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{o.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{o.city} · Mgr: {o.manager}</div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center space-x-1.5">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs" style={{ background: o.healthScore >= 75 ? "rgba(16,185,129,0.15)" : o.healthScore >= 55 ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)", color: o.healthScore >= 75 ? "#059669" : o.healthScore >= 55 ? "#d97706" : "#dc2626" }}>
+                                    {o.healthScore}
+                                  </div>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${o.gradeColor}`}>{o.grade}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-slate-800">₹{(o.agentOutputs.sales.revenue / 100000).toFixed(1)}L</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.sales.margin >= 30 ? "text-emerald-600" : o.agentOutputs.sales.margin >= 20 ? "text-indigo-600" : "text-rose-600"}`}>{o.agentOutputs.sales.margin}%</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {o.agentOutputs.inventory.criticalStock > 0 ? (
+                                  <span className="text-rose-600 font-bold">{o.agentOutputs.inventory.criticalStock} 🔴</span>
+                                ) : o.agentOutputs.inventory.lowStock > 0 ? (
+                                  <span className="text-amber-600 font-bold">{o.agentOutputs.inventory.lowStock} ⚠️</span>
+                                ) : (
+                                  <span className="text-emerald-600 font-bold">✓ OK</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.staff.avgRating >= 4.2 ? "text-emerald-600" : o.agentOutputs.staff.avgRating >= 3.5 ? "text-indigo-600" : "text-rose-600"}`}>{o.agentOutputs.staff.avgRating}/5</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.audit.passRate >= 75 ? "text-emerald-600" : o.agentOutputs.audit.passRate >= 50 ? "text-amber-600" : "text-rose-600"}`}>{o.agentOutputs.audit.passRate}%</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Benchmark Outliers & Health Score Simulator Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {/* Performance Benchmarks Card */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 lg:col-span-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Network Performance Benchmarks</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5 mb-4">Top and bottom multi-dimensional outliers</p>
+                        
+                        {outliers && (
+                          <div className="space-y-3.5">
+                            <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 flex items-center space-x-3">
+                              <span className="text-2xl">🏆</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-800">Revenue Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxRev.outletName}</div>
+                                <div className="text-[10px] text-slate-500">₹{(outliers.maxRev.agentOutputs.sales.revenue / 100000).toFixed(1)}L Gross Revenue</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-sky-50/50 rounded-xl border border-sky-100 flex items-center space-x-3">
+                              <span className="text-2xl">📈</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-sky-800">Margin Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxMargin.outletName}</div>
+                                <div className="text-[10px] text-slate-500">{outliers.maxMargin.agentOutputs.sales.margin}% operating margin</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-violet-50/50 rounded-xl border border-violet-100 flex items-center space-x-3">
+                              <span className="text-2xl">📋</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-violet-800">Audit Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxAudit.outletName}</div>
+                                <div className="text-[10px] text-slate-500">{outliers.maxAudit.agentOutputs.audit.avgScore}/100 audit score</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center space-x-3">
+                              <span className="text-2xl">⚠️</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-rose-800">Needs Support</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.minHealth.outletName}</div>
+                                <div className="text-[10px] text-rose-500 font-medium">Health Score: {outliers.minHealth.healthScore} ({outliers.minHealth.grade})</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Franchise Health Score Simulator */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">Franchise Health Score Simulator</h3>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Simulate how KPIs affect Health Score & Grade in real-time</p>
+                        </div>
+                        
+                        {/* Selector to load outlet values */}
+                        <select 
+                          className="text-[11px] font-medium border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={simulatedOutletId || ""}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setSimulatedOutletId(val);
+                            const found = intelligenceConsolidated.outlets.find((o: any) => o.outletId === val);
+                            if (found) {
+                              setSimulatedRevenue(found.agentOutputs.sales.revenue);
+                              setSimulatedMargin(found.agentOutputs.sales.margin);
+                              setSimulatedStockIssues(found.agentOutputs.inventory.criticalStock + found.agentOutputs.inventory.lowStock);
+                              setSimulatedStaffRating(found.agentOutputs.staff.avgRating);
+                              setSimulatedAuditScore(found.agentOutputs.audit.avgScore || 75);
+                              setSimulatedOrders(found.agentOutputs.sales.orders);
+                            }
+                          }}
+                        >
+                          {intelligenceConsolidated.outlets.map((o: any) => (
+                            <option key={o.outletId} value={o.outletId}>Load: {o.outletName}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-4">
+                        {/* Sliders panel */}
+                        <div className="md:col-span-2 space-y-3">
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Gross Revenue</span>
+                              <span className="font-bold text-slate-800">₹{(simulatedRevenue / 100000).toFixed(1)}L</span>
+                            </div>
+                            <input 
+                              type="range" min="100000" max="1500000" step="50000"
+                              value={simulatedRevenue}
+                              onChange={(e) => setSimulatedRevenue(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Operating Profit Margin</span>
+                              <span className="font-bold text-slate-800">{simulatedMargin}%</span>
+                            </div>
+                            <input 
+                              type="range" min="0" max="50" step="1"
+                              value={simulatedMargin}
+                              onChange={(e) => setSimulatedMargin(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Stock Shortages (Low / Critical)</span>
+                              <span className="font-bold text-slate-800">{simulatedStockIssues} items</span>
+                            </div>
+                            <input 
+                              type="range" min="0" max="10" step="1"
+                              value={simulatedStockIssues}
+                              onChange={(e) => setSimulatedStockIssues(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <div className="flex justify-between text-[10px] font-medium text-slate-600 mb-1">
+                                <span>Staff Rating</span>
+                                <span className="font-bold text-slate-800">{simulatedStaffRating}/5</span>
+                              </div>
+                              <input 
+                                type="range" min="1" max="5" step="0.1"
+                                value={simulatedStaffRating}
+                                onChange={(e) => setSimulatedStaffRating(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[10px] font-medium text-slate-600 mb-1">
+                                <span>Audit Score</span>
+                                <span className="font-bold text-slate-800">{simulatedAuditScore}%</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="100" step="1"
+                                value={simulatedAuditScore}
+                                onChange={(e) => setSimulatedAuditScore(parseInt(e.target.value, 10))}
+                                className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visual output panel */}
+                        <div className="md:col-span-1 bg-slate-50 rounded-2xl border border-slate-100 p-4 flex flex-col items-center justify-center text-center">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Simulated Score</span>
+                          
+                          <div className="relative flex items-center justify-center mt-3 mb-2">
+                            {/* Inner circle with values */}
+                            <div className="w-24 h-24 rounded-full bg-white border border-slate-100 shadow-xs flex flex-col items-center justify-center">
+                              <span className="text-3xl font-black text-slate-800">{simulatedHealthScore.score}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border mt-1.5 ${simulatedHealthScore.gradeColor}`}>
+                                Grade {simulatedHealthScore.grade}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] font-medium text-slate-500 leading-normal mt-1">
+                            {simulatedHealthScore.score >= 80 ? (
+                              <span className="text-emerald-600 font-semibold">Healthy performance & high standards. Ready for expansion.</span>
+                            ) : simulatedHealthScore.score >= 60 ? (
+                              <span className="text-indigo-600 font-semibold">Moderately healthy. Focus on inventory and audit compliance to raise score.</span>
+                            ) : (
+                              <span className="text-rose-600 font-bold">Needs critical support! Urgently audit cost structure and compliance gaps.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 2. HEALTH SCORE ENGINE ─────────────────────────── */}
+              {intelligenceSubTab === "health" && !intelligenceLoading && intelligenceHealthScores.length > 0 && (
+                <div className="space-y-4">
+                  {/* Summary Row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { label: "Avg Network Score", val: Math.round(intelligenceHealthScores.reduce((s, o) => s + o.healthScore, 0) / (intelligenceHealthScores.length || 1)), unit: "/100", color: "text-indigo-600" },
+                      { label: "Excellent (≥80)", val: intelligenceHealthScores.filter(o => o.healthScore >= 80).length, unit: " outlets", color: "text-emerald-600" },
+                      { label: "At Risk (50–64)", val: intelligenceHealthScores.filter(o => o.healthScore >= 50 && o.healthScore < 65).length, unit: " outlets", color: "text-amber-600" },
+                      { label: "Critical (<50)", val: intelligenceHealthScores.filter(o => o.healthScore < 50).length, unit: " outlets", color: "text-rose-600" },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">{s.label}</span>
+                        <div className={`text-2xl font-black mt-1 ${s.color}`}>{s.val}<span className="text-sm font-semibold text-slate-400">{s.unit}</span></div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bar Chart */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
+                    <h3 className="text-sm font-bold text-slate-900">Composite Health Score by Outlet</h3>
+                    <p className="text-xs text-slate-500">Weighted across Financial (35%), Operational (25%), Compliance (20%), Marketing (20%)</p>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={intelligenceHealthScores} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="city" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <Tooltip formatter={(v: any) => [`${v}/100`, "Health Score"]} labelFormatter={(l) => `Outlet: ${l}`} />
+                          <Bar dataKey="healthScore" radius={[6, 6, 0, 0]} fill="#4f46e5"
+                            label={{ position: "top", fontSize: 10, fill: "#475569", fontWeight: "bold" }} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Score Breakdown Table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100">
+                      <h3 className="text-sm font-bold text-slate-900">Score Component Breakdown</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Individual KPI contribution per outlet (out of max points)</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Outlet</th>
+                            <th className="px-4 py-3 text-center">Total</th>
+                            <th className="px-4 py-3 text-center">Grade</th>
+                            <th className="px-4 py-3 text-center">Financial /35</th>
+                            <th className="px-4 py-3 text-center">Revenue /10</th>
+                            <th className="px-4 py-3 text-center">Inventory /15</th>
+                            <th className="px-4 py-3 text-center">Staff /10</th>
+                            <th className="px-4 py-3 text-center">Compliance /20</th>
+                            <th className="px-4 py-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {intelligenceHealthScores.map((o: any) => (
+                            <tr key={o.outletId} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{o.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{o.city}</div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="font-black text-sm" style={{ color: o.healthScore >= 75 ? "#059669" : o.healthScore >= 55 ? "#d97706" : "#dc2626" }}>{o.healthScore}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.gradeColor}`}>{o.grade}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center space-x-1">
+                                  <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${(o.components.financial / 35) * 100}%` }} />
+                                  </div>
+                                  <span className="text-slate-600 w-6 text-right">{o.components.financial}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700 font-semibold">{o.components.revenue}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-semibold ${o.components.inventory >= 12 ? "text-emerald-600" : o.components.inventory >= 7 ? "text-amber-600" : "text-rose-600"}`}>{o.components.inventory}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700 font-semibold">{o.components.staff}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-semibold ${o.components.compliance >= 16 ? "text-emerald-600" : o.components.compliance >= 12 ? "text-amber-600" : "text-rose-600"}`}>{o.components.compliance}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`text-[10px] font-bold ${o.trendColor}`}>{o.trend}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 3. RISK PREDICTION ENGINE ──────────────────────── */}
+              {intelligenceSubTab === "risks" && !intelligenceLoading && intelligenceRisks && (
+                <div className="space-y-4">
+                  {/* Risk Summary Stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { label: "Critical Risks", val: intelligenceRisks.summary.critical, bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", num: "text-rose-600" },
+                      { label: "High Risks", val: intelligenceRisks.summary.high, bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", num: "text-amber-600" },
+                      { label: "Medium Risks", val: intelligenceRisks.summary.medium, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700", num: "text-yellow-600" },
+                      { label: "Total Identified", val: intelligenceRisks.summary.total, bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", num: "text-slate-800" },
+                    ].map((s) => (
+                      <div key={s.label} className={`${s.bg} p-4 rounded-2xl border ${s.border}`}>
+                        <span className={`text-xs font-bold ${s.text}`}>{s.label}</span>
+                        <div className={`text-3xl font-black mt-1 ${s.num}`}>{s.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Risk Cards */}
+                  <div className="space-y-3">
+                    {intelligenceRisks.risks.map((risk: any) => {
+                      const sev = risk.severity;
+                      const sevStyle = sev === "Critical"
+                        ? { border: "border-rose-200", bg: "bg-rose-50", badge: "bg-rose-100 text-rose-800 border-rose-300", icon: "🔴" }
+                        : sev === "High"
+                        ? { border: "border-amber-200", bg: "bg-amber-50", badge: "bg-amber-100 text-amber-800 border-amber-300", icon: "🟠" }
+                        : { border: "border-yellow-200", bg: "bg-yellow-50", badge: "bg-yellow-100 text-yellow-800 border-yellow-300", icon: "🟡" };
+
+                      return (
+                        <div key={risk.id} className={`bg-white rounded-2xl border ${sevStyle.border} shadow-xs overflow-hidden`}>
+                          <div className={`px-4 py-2 ${sevStyle.bg} border-b ${sevStyle.border} flex items-center justify-between`}>
+                            <div className="flex items-center space-x-2">
+                              <span>{sevStyle.icon}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sevStyle.badge}`}>{risk.severity}</span>
+                              <span className="text-[10px] font-semibold text-slate-600">{risk.type}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">{risk.city !== "All Outlets" ? `${risk.outletName} · ${risk.city}` : "🌐 Network-Wide"}</span>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            <h4 className="text-sm font-bold text-slate-900">{risk.title}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{risk.description}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              <div className="bg-rose-50 border border-rose-100 rounded-xl p-2.5 text-xs">
+                                <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wide block mb-1">Business Impact</span>
+                                <span className="text-slate-700 leading-relaxed">{risk.impact}</span>
+                              </div>
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-xs">
+                                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide block mb-1">Mitigation Action</span>
+                                <span className="text-slate-700 leading-relaxed">{risk.mitigation}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 4. GROWTH OPPORTUNITIES ────────────────────────── */}
+              {intelligenceSubTab === "opportunities" && !intelligenceLoading && intelligenceOpportunities && (
+                <div className="space-y-4">
+                  {/* Opportunity Summary */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Total Opportunities</span>
+                      <div className="text-2xl font-black text-indigo-600 mt-1">{intelligenceOpportunities.summary.total}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">High Priority</span>
+                      <div className="text-2xl font-black text-emerald-600 mt-1">{intelligenceOpportunities.summary.highPriority}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Medium Priority</span>
+                      <div className="text-2xl font-black text-amber-600 mt-1">{intelligenceOpportunities.summary.mediumPriority}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Est. Total Impact</span>
+                      <div className="text-lg font-black text-slate-900 mt-1">₹{(intelligenceOpportunities.summary.totalEstimatedImpact / 1000).toFixed(0)}K</div>
+                    </div>
+                  </div>
+
+                  {/* Opportunity Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {intelligenceOpportunities.opportunities.map((opp: any) => {
+                      const priStyle = opp.priority === "High"
+                        ? { border: "border-emerald-200", headerBg: "bg-emerald-50 border-b border-emerald-200", badge: "bg-emerald-100 text-emerald-800" }
+                        : opp.priority === "Medium"
+                        ? { border: "border-amber-200", headerBg: "bg-amber-50 border-b border-amber-200", badge: "bg-amber-100 text-amber-800" }
+                        : { border: "border-slate-200", headerBg: "bg-slate-50 border-b border-slate-200", badge: "bg-slate-100 text-slate-600" };
+
+                      return (
+                        <div key={opp.id} className={`bg-white rounded-2xl border ${priStyle.border} shadow-xs overflow-hidden`}>
+                          <div className={`px-4 py-2.5 ${priStyle.headerBg} flex items-center justify-between`}>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-base">{opp.icon}</span>
+                              <div>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${priStyle.badge}`}>{opp.priority} Priority</span>
+                                <span className="text-[10px] text-slate-500 ml-1.5">{opp.type}</span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">{opp.impactLabel}</span>
+                          </div>
+                          <div className="p-4 space-y-2.5">
+                            <h4 className="text-sm font-bold text-slate-900 leading-tight">{opp.title}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{opp.description}</p>
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5">
+                              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide block mb-1">Recommended Action</span>
+                              <span className="text-xs text-slate-700 leading-relaxed">{opp.action}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                              <span>{opp.outletName} · {opp.city}</span>
+                              <span className="font-semibold text-slate-500">{opp.category}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {intelligenceOpportunities.opportunities.length === 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-10 text-center space-y-3">
+                      <div className="text-4xl">✅</div>
+                      <p className="text-sm font-bold text-slate-700">All outlets are operating near-optimally</p>
+                      <p className="text-xs text-slate-400">No significant growth gaps detected at this time.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 5. STRATEGIC RECOMMENDATIONS ──────────────────── */}
+              {intelligenceSubTab === "recommendations" && !intelligenceLoading && intelligenceRecommendations && (
+                <div className="space-y-4">
+                  {/* Summary Strip */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-wrap items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900">Strategic Recommendation Engine</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Prioritized actions ranked by urgency × impact across all outlets</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs shrink-0">
+                      <div className="flex items-center space-x-1.5 bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span className="font-bold text-rose-700">P1 Critical: {intelligenceRecommendations.summary.p1}</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        <span className="font-bold text-amber-700">P2 High: {intelligenceRecommendations.summary.p2}</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="font-bold text-blue-700">P3 Medium: {intelligenceRecommendations.summary.p3}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommendation Cards */}
+                  <div className="space-y-3">
+                    {intelligenceRecommendations.recommendations.map((rec: any, idx: number) => (
+                      <div key={rec.id} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                        {/* Card Header */}
+                        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-[10px] font-black text-slate-400 w-5">{String(idx + 1).padStart(2, "0")}</span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${rec.priorityColor}`}>{rec.priority} · {rec.priorityLabel}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-semibold">{rec.category}</span>
+                          </div>
+                          <div className="flex items-center space-x-2 text-[10px]">
+                            {rec.affectedOutlets.map((o: any) => (
+                              <span key={o.id ?? 0} className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{o.name} · {o.city}</span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Card Body */}
+                        <div className="p-5 space-y-3">
+                          <div className="flex items-start space-x-3">
+                            <span className="text-xl shrink-0">{rec.icon}</span>
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-900">{rec.title}</h4>
+                              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{rec.rationale}</p>
+                            </div>
+                          </div>
+
+                          {/* Action Checklist */}
+                          <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Action Plan</span>
+                            {rec.actions.map((action: string, i: number) => (
+                              <div key={i} className="flex items-start space-x-2 text-xs">
+                                <span className="text-indigo-500 font-black mt-0.5 shrink-0">{i + 1}.</span>
+                                <span className="text-slate-700 leading-relaxed">{action}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Estimated Impact */}
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center space-x-2">
+                            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide shrink-0">Estimated Impact:</span>
+                            <span className="text-xs text-emerald-800 font-semibold leading-relaxed">{rec.estimatedImpact}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {intelligenceRecommendations.recommendations.length === 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-10 text-center space-y-3">
+                      <div className="text-4xl">🏆</div>
+                      <p className="text-sm font-bold text-slate-700">Network is performing excellently</p>
+                      <p className="text-xs text-slate-400">No critical or high-priority interventions required at this time.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OTHER STEPS (1, 2, 9, 10) Rendering within section */}
+          {![3, 4, 5, 6, 7, 8].includes(activeStepId) && (
+            <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
+                <Icons.Workflow />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">
+                {WORKFLOW_STEPS.find((s) => s.id === activeStepId)?.name} Active
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                {WORKFLOW_STEPS.find((s) => s.id === activeStepId)?.desc}
+              </p>
+              <div className="pt-2">
+                <button
+                  onClick={() => setActiveStepId(3)}
+                  className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer hover:bg-indigo-700 transition-all"
+                >
+                  Return to Outlet Performance Agent
+                </button>
+              </div>
+            </div>
+          )}
+
+
+        </main>
+      </div>
       </div>
 
-      {/* ── WORKER PROFILE & ATTENDANCE DETAIL MODAL ─────────────────────────── */}
-      {selectedWorkerModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 w-full max-w-3xl shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-5 mb-6">
-              <div className="flex items-center space-x-4">
-                <img
-                  src={selectedWorkerModal.avatar}
-                  alt={selectedWorkerModal.name}
-                  className="h-16 w-16 rounded-2xl object-cover border-2 border-indigo-200 shadow-md shrink-0"
-                />
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h3 className="text-xl font-black text-slate-900">{selectedWorkerModal.name}</h3>
-                    <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
-                      {selectedWorkerModal.employeeId}
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-slate-500 mt-0.5">{selectedWorkerModal.role} · <span className="text-slate-800 font-bold">{selectedWorkerModal.outletName}</span></p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedWorkerModal(null)}
-                className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-800 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+        outlets={outlets}
+      />
 
-            {/* Worker Contact & Timings Overview */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-extrabold uppercase text-slate-400">Phone Number</p>
-                <p className="text-xs font-bold text-slate-900 mt-1">{selectedWorkerModal.phone}</p>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-extrabold uppercase text-slate-400">Email Address</p>
-                <p className="text-xs font-bold text-slate-900 mt-1 truncate">{selectedWorkerModal.email}</p>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-extrabold uppercase text-slate-400">Today Working Shift</p>
-                <p className="text-xs font-bold text-emerald-700 mt-1">
-                  Start: {selectedWorkerModal.clockIn} | End: {selectedWorkerModal.clockOut}
-                </p>
-              </div>
-            </div>
-
-            {/* Salary Breakdown (Base, Bonus, Salary Cut with Reason) */}
-            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl p-5 mb-6 shadow-md">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-300 mb-3">Monthly Salary & Compensation Structure</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
-                <div>
-                  <p className="text-slate-400">Base Salary</p>
-                  <p className="text-lg font-black mt-0.5">{formatCurrency(selectedWorkerModal.baseSalary)}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Performance Bonus</p>
-                  <p className="text-lg font-black text-emerald-400 mt-0.5">+{formatCurrency(selectedWorkerModal.bonus)}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Salary Cut (Deductions)</p>
-                  <p className="text-lg font-black text-red-400 mt-0.5">
-                    {selectedWorkerModal.salaryCut > 0 ? `-${formatCurrency(selectedWorkerModal.salaryCut)}` : "₹0"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Net Take-Home Pay</p>
-                  <p className="text-lg font-black text-indigo-300 mt-0.5">
-                    {formatCurrency(selectedWorkerModal.baseSalary + selectedWorkerModal.bonus - selectedWorkerModal.salaryCut)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Salary Cut Reason Notice */}
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-start space-x-2 text-xs">
-                <span className="font-extrabold text-amber-400 shrink-0">Salary Cut Reason:</span>
-                <span className="text-slate-300 italic">{selectedWorkerModal.salaryCutReason}</span>
-              </div>
-            </div>
-
-            {/* Previous Attendance Log Table */}
-            <div>
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3">
-                Complete Attendance History & Daily Punch Log
-              </h4>
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-500 tracking-wider">
-                    <tr>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Assigned Shift</th>
-                      <th className="px-4 py-3 text-center">Clock In</th>
-                      <th className="px-4 py-3 text-center">Clock Out</th>
-                      <th className="px-4 py-3 text-right">Total Hours</th>
-                      <th className="px-4 py-3">Attendance Status</th>
-                      <th className="px-4 py-3 text-right">Deduction / Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {selectedWorkerModal.attendanceHistory.map((att, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-bold text-slate-900">{att.date}</td>
-                        <td className="px-4 py-3 text-slate-600">{att.shift}</td>
-                        <td className="px-4 py-3 text-center font-mono font-bold text-emerald-700 bg-emerald-50/50 rounded-lg">{att.clockIn}</td>
-                        <td className="px-4 py-3 text-center font-mono font-bold text-slate-700 bg-slate-100/50 rounded-lg">{att.clockOut}</td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-800">{att.totalHours > 0 ? `${att.totalHours} hrs` : "--"}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                            att.status === "Present" ? "bg-emerald-100 text-emerald-800" : att.status === "Late" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"
-                          }`}>
-                            {att.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {att.deduction > 0 ? (
-                            <div>
-                              <span className="font-extrabold text-red-600">-{formatCurrency(att.deduction)}</span>
-                              {att.deductionReason && <p className="text-[10px] text-slate-500 italic mt-0.5">{att.deductionReason}</p>}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400">None</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setSelectedWorkerModal(null)}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl transition-all"
-              >
-                Close Worker Profile
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── GLOBAL TOAST NOTIFICATION ─────────────────────────────────────── */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-          <div
-            className={`px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center space-x-2.5 backdrop-blur-md ${
-              toast.type === "success"
-                ? "bg-emerald-950/90 border-emerald-700/80 text-emerald-200"
-                : toast.type === "warning"
-                ? "bg-amber-950/90 border-amber-700/80 text-amber-200"
-                : "bg-indigo-950/90 border-indigo-700/80 text-indigo-200"
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-current animate-ping"></span>
-            <span>{toast.message}</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 1: CSV PAYLOAD UPLOAD ────────────────────────────────────── */}
-      {showCsvUploadModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Upload Sales CSV Payload</h3>
-                <p className="text-xs text-slate-500">Paste raw CSV logs or import sales telemetry records</p>
-              </div>
-              <button onClick={() => setShowCsvUploadModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCsvUploadSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">CSV Format (Outlet, Date, Revenue, Cost, Orders, Customers)</label>
-                <textarea
-                  rows={5}
-                  value={csvRawInput}
-                  onChange={e => setCsvRawInput(e.target.value)}
-                  placeholder={`Outlet,Date,Revenue,Cost,Orders,Customers\nBengaluru Central,2026-08-01,48000,26000,230,260\nHyderabad Tech Park,2026-08-01,52000,28000,240,280`}
-                  className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-2xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCsvUploadModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Ingest CSV Data
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 2: RECORD DAILY SALES ENTRY ─────────────────────────────── */}
-      {showRecordSalesModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Record Daily Sales Entry</h3>
-                <p className="text-xs text-slate-500">Manual POS entry for outlet operations</p>
-              </div>
-              <button onClick={() => setShowRecordSalesModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleRecordSalesSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
-                <select
-                  value={newSalesForm.outletId}
-                  onChange={e => setNewSalesForm({ ...newSalesForm, outletId: e.target.value })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="1">FranchiseOps - Bengaluru Central</option>
-                  <option value="2">FranchiseOps - Hyderabad Tech Park</option>
-                  <option value="3">FranchiseOps - Chennai Marina</option>
-                  <option value="4">FranchiseOps - Mumbai Andheri</option>
-                  <option value="5">FranchiseOps - Pune Hinjawadi</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Sale Date</label>
-                  <input
-                    type="date"
-                    value={newSalesForm.saleDate}
-                    onChange={e => setNewSalesForm({ ...newSalesForm, saleDate: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Total Orders</label>
-                  <input
-                    type="number"
-                    value={newSalesForm.totalOrders}
-                    onChange={e => setNewSalesForm({ ...newSalesForm, totalOrders: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Gross Revenue (₹)</label>
-                  <input
-                    type="number"
-                    value={newSalesForm.grossRevenue}
-                    onChange={e => setNewSalesForm({ ...newSalesForm, grossRevenue: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Operating Cost (₹)</label>
-                  <input
-                    type="number"
-                    value={newSalesForm.operatingCost}
-                    onChange={e => setNewSalesForm({ ...newSalesForm, operatingCost: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowRecordSalesModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Save Sales Entry
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 3: WORKER PUNCH CLOCK IN / OUT ───────────────────────────── */}
-      {showClockInModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Punch Clock In / Out</h3>
-                <p className="text-xs text-slate-500">Record staff shift attendance & salary deductions</p>
-              </div>
-              <button onClick={() => setShowClockInModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleClockInSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Staff Worker</label>
-                <select
-                  value={clockInForm.workerId}
-                  onChange={e => setClockInForm({ ...clockInForm, workerId: parseInt(e.target.value, 10) })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {workers.map(w => (
-                    <option key={w.id} value={w.id}>{w.name} ({w.role} - {w.outletName})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock In Time</label>
-                  <input
-                    type="text"
-                    value={clockInForm.clockIn}
-                    onChange={e => setClockInForm({ ...clockInForm, clockIn: e.target.value })}
-                    placeholder="08:45 AM"
-                    className="w-full text-xs font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock Out Time</label>
-                  <input
-                    type="text"
-                    value={clockInForm.clockOut}
-                    onChange={e => setClockInForm({ ...clockInForm, clockOut: e.target.value })}
-                    placeholder="05:30 PM"
-                    className="w-full text-xs font-bold font-mono bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Attendance Status</label>
-                <select
-                  value={clockInForm.status}
-                  onChange={e => setClockInForm({ ...clockInForm, status: e.target.value as any })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="Present">Present (On Time)</option>
-                  <option value="Late">Late Clock-In</option>
-                  <option value="Half Day">Half Day</option>
-                  <option value="Absent">Absent</option>
-                </select>
-              </div>
-
-              {clockInForm.status === "Late" || clockInForm.status === "Half Day" || clockInForm.status === "Absent" ? (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2">
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-red-800">Deduction Amount (₹)</label>
-                    <input
-                      type="number"
-                      value={clockInForm.deduction}
-                      onChange={e => setClockInForm({ ...clockInForm, deduction: e.target.value })}
-                      placeholder="500"
-                      className="w-full text-xs font-bold bg-white border border-red-200 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-extrabold text-red-800">Reason for Salary Cut</label>
-                    <input
-                      type="text"
-                      value={clockInForm.deductionReason}
-                      onChange={e => setClockInForm({ ...clockInForm, deductionReason: e.target.value })}
-                      placeholder="Traffic delay > 45 mins"
-                      className="w-full text-xs bg-white border border-red-200 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowClockInModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Submit Shift Punch
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 4: REGISTER NEW WORKER ───────────────────────────────────── */}
-      {showAddWorkerModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Register New Staff Worker</h3>
-                <p className="text-xs text-slate-500">Add barista, store lead, or cashier to payroll</p>
-              </div>
-              <button onClick={() => setShowAddWorkerModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleAddWorkerSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Worker Name *</label>
-                  <input
-                    type="text"
-                    value={newWorkerForm.name}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, name: e.target.value })}
-                    placeholder="e.g. Vikram Sharma"
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Role / Designation</label>
-                  <input
-                    type="text"
-                    value={newWorkerForm.role}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, role: e.target.value })}
-                    placeholder="Head Barista"
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
-                  <select
-                    value={newWorkerForm.outletName}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, outletName: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="Bengaluru Central">Bengaluru Central</option>
-                    <option value="Hyderabad Tech Park">Hyderabad Tech Park</option>
-                    <option value="Chennai Marina">Chennai Marina</option>
-                    <option value="Mumbai Andheri">Mumbai Andheri</option>
-                    <option value="Pune Hinjawadi">Pune Hinjawadi</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={newWorkerForm.phone}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, phone: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Base Monthly Salary (₹)</label>
-                  <input
-                    type="number"
-                    value={newWorkerForm.baseSalary}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, baseSalary: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Monthly Bonus (₹)</label>
-                  <input
-                    type="number"
-                    value={newWorkerForm.bonus}
-                    onChange={e => setNewWorkerForm({ ...newWorkerForm, bonus: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddWorkerModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Register Worker
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 5: LAUNCH MARKETING CAMPAIGN ────────────────────────────── */}
-      {showMarketingModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Launch Marketing Campaign</h3>
-                <p className="text-xs text-slate-500">Set campaign parameters & allocated budget</p>
-              </div>
-              <button onClick={() => setShowMarketingModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleLaunchCampaignSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Campaign Name *</label>
-                <input
-                  type="text"
-                  value={newMarketingForm.name}
-                  onChange={e => setNewMarketingForm({ ...newMarketingForm, name: e.target.value })}
-                  placeholder="e.g. Festival Season Combo Pack"
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Channel / Platform</label>
-                <select
-                  value={newMarketingForm.channel}
-                  onChange={e => setNewMarketingForm({ ...newMarketingForm, channel: e.target.value })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                >
-                  <option value="Google Local Ads">Google Local Ads</option>
-                  <option value="Zomato & Swiggy Promo">Zomato & Swiggy Promo</option>
-                  <option value="In-Store QR Code">In-Store QR Code</option>
-                  <option value="Instagram Geofence">Instagram Geofence</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Allocated Budget (₹)</label>
-                <input
-                  type="number"
-                  value={newMarketingForm.budget}
-                  onChange={e => setNewMarketingForm({ ...newMarketingForm, budget: e.target.value })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                  required
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowMarketingModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-pink-600 hover:bg-pink-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Launch Campaign
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 6: LOG STORE AUDIT ───────────────────────────────────────── */}
-      {showAuditModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Log Store Audit Inspection</h3>
-                <p className="text-xs text-slate-500">Record hygiene, safety & SOP compliance</p>
-              </div>
-              <button onClick={() => setShowAuditModal(false)} className="text-slate-400 hover:text-slate-800 p-1">
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleLogAuditSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Outlet Location</label>
-                <select
-                  value={newAuditForm.outletName}
-                  onChange={e => setNewAuditForm({ ...newAuditForm, outletName: e.target.value })}
-                  className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="Bengaluru Central">Bengaluru Central</option>
-                  <option value="Hyderabad Tech Park">Hyderabad Tech Park</option>
-                  <option value="Chennai Marina">Chennai Marina</option>
-                  <option value="Mumbai Andheri">Mumbai Andheri</option>
-                  <option value="Pune Hinjawadi">Pune Hinjawadi</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Hygiene %</label>
-                  <input
-                    type="number"
-                    value={newAuditForm.hygieneScore}
-                    onChange={e => setNewAuditForm({ ...newAuditForm, hygieneScore: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Safety %</label>
-                  <input
-                    type="number"
-                    value={newAuditForm.safetyScore}
-                    onChange={e => setNewAuditForm({ ...newAuditForm, safetyScore: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Uniform %</label>
-                  <input
-                    type="number"
-                    value={newAuditForm.uniformSopScore}
-                    onChange={e => setNewAuditForm({ ...newAuditForm, uniformSopScore: e.target.value })}
-                    className="w-full text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Audit Notes & Findings</label>
-                <input
-                  type="text"
-                  value={newAuditForm.notes}
-                  onChange={e => setNewAuditForm({ ...newAuditForm, notes: e.target.value })}
-                  placeholder="Refrigeration logs clean. Uniform compliant."
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAuditModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md"
-                >
-                  Save Audit Record
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── SPOTLIGHT COMMAND PALETTE MODAL (⌘K) ─────────────────────────── */}
-      {commandPaletteOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-start justify-center pt-20 p-4">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-4 w-full max-w-2xl shadow-2xl animate-fade-in text-white">
-            <div className="flex items-center space-x-3 border-b border-slate-800 pb-3 mb-3 px-2">
-              <svg className="w-5 h-5 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                autoFocus
-                value={commandPaletteQuery}
-                onChange={e => setCommandPaletteQuery(e.target.value)}
-                placeholder="Type a step name, worker, action, or command (e.g. 'sales', 'payroll', 'export')..."
-                className="w-full bg-transparent text-sm font-semibold text-white placeholder-slate-500 focus:outline-none"
-              />
-              <kbd className="bg-slate-800 text-slate-400 text-[10px] font-mono px-2 py-1 rounded border border-slate-700">ESC</kbd>
-            </div>
-
-            <div className="max-h-96 overflow-y-auto space-y-2 px-1">
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2">Matching Workflow Modules</p>
-              {WORKFLOW_STEPS.filter(s => commandPaletteQuery.trim() === "" || s.name.toLowerCase().includes(commandPaletteQuery.toLowerCase()) || s.desc.toLowerCase().includes(commandPaletteQuery.toLowerCase())).map(step => (
-                <button
-                  key={step.id}
-                  onClick={() => {
-                    setSelectedStep(step.id);
-                    setCommandPaletteOpen(false);
-                    showToast(`Navigated to Step ${step.id}: ${step.name}`, "info");
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 hover:bg-indigo-600/80 transition-all border border-slate-800 text-left group"
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="h-7 w-7 rounded-xl bg-slate-800 group-hover:bg-white/20 flex items-center justify-center font-extrabold text-xs text-indigo-300 group-hover:text-white">
-                      {step.id}
-                    </span>
-                    <div>
-                      <p className="text-xs font-bold text-slate-100 group-hover:text-white">{step.name}</p>
-                      <p className="text-[10px] text-slate-400 group-hover:text-indigo-100 truncate max-w-md">{step.desc}</p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 group-hover:text-white">Jump →</span>
-                </button>
-              ))}
-
-              <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 px-2 pt-2">Quick System Actions</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => { exportSalesToCsv(); setCommandPaletteOpen(false); }}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
-                >
-                  📥 Export Sales CSV
-                </button>
-                <button
-                  onClick={() => { setShowRecordSalesModal(true); setCommandPaletteOpen(false); }}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
-                >
-                  📊 Record Sales Entry
-                </button>
-                <button
-                  onClick={() => { setShowClockInModal(true); setCommandPaletteOpen(false); }}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
-                >
-                  ⏱️ Punch Clock In/Out
-                </button>
-                <button
-                  onClick={() => { setShowAddWorkerModal(true); setCommandPaletteOpen(false); }}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-left text-xs font-bold transition-all border border-slate-700"
-                >
-                  👤 Register New Worker
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Location Comparison Matrix Modal */}
+      <CompareModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+        selectedLocationIds={selectedLocationIds}
+      />
     </div>
   );
 }
