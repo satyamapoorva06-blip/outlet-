@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import axios from "axios";
+import MapComponent from "./components/MapComponent";
+import CompareModal from "./components/CompareModal";
 import {
   AreaChart,
   Area,
@@ -443,6 +445,24 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState("");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+
+  // GIS Map & Outlet Compare States
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([1, 2]);
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
+
+  const toggleSelectLocation = (id: number) => {
+    setSelectedLocationIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const mapLocations = useMemo(() => [
+    { id: 1, name: "FranchiseOps - Bengaluru Central", manager: "Rajesh Kumar", address: "MG Road, Brigade Corridor", city: "Bengaluru", state: "Karnataka", latitude: 12.9716, longitude: 77.5946, metrics: { revenue: 1480000, profit: 660000, orders: 4820, avgAov: "₹307.05", profitMargin: "44.6%", stockAlerts: 0, staffCount: 12 }, healthScore: 96, statusTag: "Optimal" as const },
+    { id: 2, name: "FranchiseOps - Hyderabad Tech Park", manager: "Priya Sharma", address: "HITEC City Phase 2", city: "Hyderabad", state: "Telangana", latitude: 17.3850, longitude: 78.4867, metrics: { revenue: 1620000, profit: 710000, orders: 5310, avgAov: "₹305.08", profitMargin: "43.8%", stockAlerts: 2, staffCount: 14 }, healthScore: 78, statusTag: "Warning" as const },
+    { id: 3, name: "FranchiseOps - Chennai Marina", manager: "Karthik Raja", address: "Anna Salai, Marina Bay", city: "Chennai", state: "Tamil Nadu", latitude: 13.0827, longitude: 80.2707, metrics: { revenue: 1150000, profit: 470000, orders: 3910, avgAov: "₹294.11", profitMargin: "40.8%", stockAlerts: 1, staffCount: 10 }, healthScore: 88, statusTag: "Healthy" as const },
+    { id: 4, name: "FranchiseOps - Mumbai Andheri", manager: "Neha Kapoor", address: "Link Road, Andheri West", city: "Mumbai", state: "Maharashtra", latitude: 19.0760, longitude: 72.8777, metrics: { revenue: 1850000, profit: 810000, orders: 5940, avgAov: "₹311.45", profitMargin: "43.7%", stockAlerts: 0, staffCount: 16 }, healthScore: 95, statusTag: "Optimal" as const },
+    { id: 5, name: "FranchiseOps - Pune Hinjawadi", manager: "Vikram Joshi", address: "IT Park Phase 1", city: "Pune", state: "Maharashtra", latitude: 18.5204, longitude: 73.8567, metrics: { revenue: 980000, profit: 390000, orders: 3120, avgAov: "₹314.10", profitMargin: "39.8%", stockAlerts: 0, staffCount: 9 }, healthScore: 92, statusTag: "Healthy" as const },
+  ], []);
 
   // Worker Attendance State
   const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
@@ -1642,6 +1662,20 @@ export default function Home() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+
+                {/* ── Geographic GIS Map & Multi-Outlet Compare Matrix ──────────────── */}
+                <MapComponent
+                  locations={mapLocations}
+                  selectedLocationIds={selectedLocationIds}
+                  onToggleSelectLocation={toggleSelectLocation}
+                  onOpenCompare={() => setCompareModalOpen(true)}
+                />
+
+                <CompareModal
+                  isOpen={compareModalOpen}
+                  onClose={() => setCompareModalOpen(false)}
+                  selectedLocationIds={selectedLocationIds}
+                />
               </div>
             )}
 

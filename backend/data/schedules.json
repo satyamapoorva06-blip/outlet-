@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "campaignId": 1,
+    "frequency": "weekly",
+    "nextRun": "2026-08-05",
+    "createdAt": "2026-08-05T07:16:48.169Z"
+  },
+  {
+    "id": 2,
+    "campaignId": 1,
+    "frequency": "weekly",
+    "nextRun": "2026-08-05",
+    "createdAt": "2026-08-05T11:19:46.533Z"
+  },
+  {
+    "id": 3,
+    "campaignId": 1,
+    "frequency": "weekly",
+    "nextRun": "2026-08-05",
+    "createdAt": "2026-08-05T11:28:32.132Z"
+  }
+]

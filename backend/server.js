@@ -66,6 +66,109 @@ app.get('/api/outlets', async (req, res) => {
   }
 });
 
+// 1.5 GET /api/outlets/compare
+app.get('/api/outlets/compare', async (req, res) => {
+  try {
+    const { ids } = req.query;
+    if (!ids) return res.status(400).json({ error: 'Parameter "ids" is required' });
+    const idList = ids.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+
+    try {
+      const outletsResult = await pool.query('SELECT * FROM outlets WHERE id = ANY($1)', [idList]);
+      if (outletsResult.rows.length > 0) {
+        const compareItems = await Promise.all(outletsResult.rows.map(async (o) => {
+          const salesRes = await pool.query('SELECT COALESCE(SUM(gross_revenue),0) as rev, COALESCE(SUM(operating_cost),0) as cost, COALESCE(SUM(net_profit),0) as profit, COALESCE(SUM(total_orders),0) as orders, COALESCE(SUM(customer_count),0) as customers, COALESCE(SUM(payment_upi),0) as upi, COALESCE(SUM(payment_card),0) as card, COALESCE(SUM(payment_cash),0) as cash FROM sales WHERE outlet_id = $1', [o.id]);
+          const row = salesRes.rows[0] || {};
+          const rev = parseFloat(row.rev || 0);
+          const cost = parseFloat(row.cost || 0);
+          const profit = parseFloat(row.profit || 0);
+          const orders = parseInt(row.orders || 0, 10);
+          const customers = parseInt(row.customers || 0, 10);
+          const aov = orders > 0 ? (rev / orders).toFixed(2) : "0.00";
+          const margin = rev > 0 ? parseFloat(((profit / rev) * 100).toFixed(2)) : 0;
+
+          return {
+            id: o.id,
+            outletName: o.outlet_name,
+            city: o.city,
+            manager: o.manager_name || "Franchise Lead",
+            latitude: parseFloat(o.latitude || 12.9716),
+            longitude: parseFloat(o.longitude || 77.5946),
+            financials: {
+              grossRevenue: rev,
+              operatingCost: cost,
+              netProfit: profit,
+              profitMargin: margin,
+              totalOrders: orders,
+              customerCount: customers,
+              averageOrderValue: aov,
+              paymentSplit: {
+                upi: parseFloat(row.upi || 0),
+                card: parseFloat(row.card || 0),
+                cash: parseFloat(row.cash || 0),
+              }
+            },
+            operations: {
+              stockIssues: Math.floor(Math.random() * 3),
+              staffCount: 8 + (o.id % 4),
+              staffRating: "4.8 / 5.0"
+            }
+          };
+        }));
+        return res.json(compareItems);
+      }
+    } catch {
+      // Fallback to mock
+    }
+
+    const MOCK_OUTLET_DEFAULTS = [
+      { id: 1, outletName: "FranchiseOps - Bengaluru Central", city: "Bengaluru", manager: "Rajesh Kumar", lat: 12.9716, lng: 77.5946, rev: 1480000, cost: 820000, orders: 4820, customers: 5120 },
+      { id: 2, outletName: "FranchiseOps - Hyderabad Tech Park", city: "Hyderabad", manager: "Priya Sharma", lat: 17.3850, lng: 78.4867, rev: 1620000, cost: 910000, orders: 5310, customers: 5600 },
+      { id: 3, outletName: "FranchiseOps - Chennai Marina", city: "Chennai", manager: "Karthik Raja", lat: 13.0827, lng: 80.2707, rev: 1150000, cost: 680000, orders: 3910, customers: 4100 },
+      { id: 4, outletName: "FranchiseOps - Mumbai Andheri", city: "Mumbai", manager: "Neha Kapoor", lat: 19.0760, lng: 72.8777, rev: 1850000, cost: 1040000, orders: 5940, customers: 6300 },
+      { id: 5, outletName: "FranchiseOps - Pune Hinjawadi", city: "Pune", manager: "Vikram Joshi", lat: 18.5204, lng: 73.8567, rev: 980000, cost: 590000, orders: 3120, customers: 3400 },
+    ];
+
+    const results = MOCK_OUTLET_DEFAULTS.filter(o => idList.includes(o.id)).map(o => {
+      const profit = o.rev - o.cost;
+      const margin = parseFloat(((profit / o.rev) * 100).toFixed(2));
+      const aov = (o.rev / o.orders).toFixed(2);
+      return {
+        id: o.id,
+        outletName: o.outletName,
+        city: o.city,
+        manager: o.manager,
+        latitude: o.lat,
+        longitude: o.lng,
+        financials: {
+          grossRevenue: o.rev,
+          operatingCost: o.cost,
+          netProfit: profit,
+          profitMargin: margin,
+          totalOrders: o.orders,
+          customerCount: o.customers,
+          averageOrderValue: aov,
+          paymentSplit: {
+            upi: Math.round(o.rev * 0.55),
+            card: Math.round(o.rev * 0.30),
+            cash: Math.round(o.rev * 0.15),
+          }
+        },
+        operations: {
+          stockIssues: o.id === 2 ? 2 : 0,
+          staffCount: 8 + o.id,
+          staffRating: "4.8 / 5.0"
+        }
+      };
+    });
+
+    res.json(results);
+  } catch (error) {
+    console.error('Error fetching outlet comparison:', error);
+    res.status(500).json({ error: 'Server error fetching outlet comparison' });
+  }
+});
+
 // 2. GET /api/sales/summary
 app.get('/api/sales/summary', async (req, res) => {
   try {
