@@ -250,10 +250,11 @@ export default function OperationsDashboard() {
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
-  // Sub-Feature Section Button Tabs (Prevents Page Overflow & Overflowing Scrolls!)
   const [performanceSubTab, setPerformanceSubTab] = useState<"overview" | "map" | "health" | "underperforming" | "logs">("overview");
   const [inventorySubTab, setInventorySubTab] = useState<"roster" | "ai" | "reorders">("roster");
   const [staffSubTab, setStaffSubTab] = useState<"roster" | "ai" | "shifts" | "performers" | "underperformers" | "allocate">("roster");
+  const [intelligenceSubTab, setIntelligenceSubTab] = useState<"overview" | "health" | "risks" | "opportunities" | "recommendations">("overview");
+
 
   // Data States
   const [summary, setSummary] = useState<any>(null);
@@ -318,6 +319,24 @@ export default function OperationsDashboard() {
   const [newAuditForm, setNewAuditForm] = useState({ outletId: "", auditorName: "", auditDate: "", notes: "" });
   const [creatingAudit, setCreatingAudit] = useState(false);
   const [checklistUpdating, setChecklistUpdating] = useState<number | null>(null);
+
+  // Intelligence Engine States
+  const [intelligenceConsolidated, setIntelligenceConsolidated] = useState<any>(null);
+  const [intelligenceHealthScores, setIntelligenceHealthScores] = useState<any[]>([]);
+  const [intelligenceRisks, setIntelligenceRisks] = useState<any>(null);
+  const [intelligenceOpportunities, setIntelligenceOpportunities] = useState<any>(null);
+  const [intelligenceRecommendations, setIntelligenceRecommendations] = useState<any>(null);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
+
+  // Intelligence Health Score Simulator States
+  const [simulatedOutletId, setSimulatedOutletId] = useState<number | null>(null);
+  const [simulatedRevenue, setSimulatedRevenue] = useState<number>(500000);
+  const [simulatedMargin, setSimulatedMargin] = useState<number>(20);
+  const [simulatedStockIssues, setSimulatedStockIssues] = useState<number>(0);
+  const [simulatedStaffRating, setSimulatedStaffRating] = useState<number>(4.0);
+  const [simulatedAuditScore, setSimulatedAuditScore] = useState<number>(75);
+  const [simulatedOrders, setSimulatedOrders] = useState<number>(2500);
+
 
   // UI / Modal States
   const [loading, setLoading] = useState(false);
@@ -467,6 +486,41 @@ export default function OperationsDashboard() {
         .finally(() => setAuditLoading(false));
     }
   }, [activeStepId, selectedOutlet]);
+
+  // Intelligence Engine API Effect
+  useEffect(() => {
+    if (activeStepId === 8) {
+      setIntelligenceLoading(true);
+      Promise.all([
+        api.get("/intelligence/consolidate"),
+        api.get("/intelligence/health-scores"),
+        api.get("/intelligence/risks"),
+        api.get("/intelligence/opportunities"),
+        api.get("/intelligence/recommendations"),
+      ])
+        .then(([conRes, healthRes, riskRes, oppRes, recRes]) => {
+          setIntelligenceConsolidated(conRes.data);
+          setIntelligenceHealthScores(healthRes.data);
+          setIntelligenceRisks(riskRes.data);
+          setIntelligenceOpportunities(oppRes.data);
+          setIntelligenceRecommendations(recRes.data);
+
+          if (conRes.data && conRes.data.outlets && conRes.data.outlets.length > 0) {
+            const first = conRes.data.outlets[0];
+            setSimulatedOutletId(first.outletId);
+            setSimulatedRevenue(first.agentOutputs.sales.revenue);
+            setSimulatedMargin(first.agentOutputs.sales.margin);
+            setSimulatedStockIssues(first.agentOutputs.inventory.criticalStock + first.agentOutputs.inventory.lowStock);
+            setSimulatedStaffRating(first.agentOutputs.staff.avgRating);
+            setSimulatedAuditScore(first.agentOutputs.audit.avgScore || 75);
+            setSimulatedOrders(first.agentOutputs.sales.orders);
+          }
+        })
+        .catch((err) => console.error("Error loading intelligence data:", err))
+        .finally(() => setIntelligenceLoading(false));
+    }
+  }, [activeStepId]);
+
 
   const handleLoadAuditSession = async (sessionId: number) => {
     setActiveAuditSessionId(sessionId);
@@ -635,6 +689,43 @@ export default function OperationsDashboard() {
   const aiInsights = useMemo(() => {
     return computeAiInsights(trends, salesList, activeOutletName);
   }, [trends, salesList, activeOutletName]);
+
+  // Franchise Health Score Simulator Memo
+  const simulatedHealthScore = useMemo(() => {
+    const financialScore  = Math.min(35, Math.max(0, (simulatedMargin / 45) * 35));
+    const revenueScore    = Math.min(10, Math.max(0, (simulatedRevenue / 1500000) * 10));
+    const inventoryScore  = Math.min(15, Math.max(0, 15 - simulatedStockIssues * 4));
+    const staffScore      = Math.min(10, Math.max(0, ((simulatedStaffRating - 3.0) / 2.0) * 10));
+    const complianceScore = Math.min(20, Math.max(0, (simulatedAuditScore / 100) * 20));
+    const orderScore      = Math.min(10, Math.max(0, (simulatedOrders / 5000) * 10));
+    const total = Math.round(financialScore + revenueScore + inventoryScore + staffScore + complianceScore + orderScore);
+    const cappedTotal = Math.min(100, Math.max(0, total));
+
+    let grade = 'F', gradeColor = 'bg-red-100 text-red-800 border-red-200';
+    if (cappedTotal >= 90)      { grade = 'A+'; gradeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200'; }
+    else if (cappedTotal >= 80) { grade = 'A';  gradeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200'; }
+    else if (cappedTotal >= 70) { grade = 'B';  gradeColor = 'bg-blue-100 text-blue-800 border-blue-200'; }
+    else if (cappedTotal >= 60) { grade = 'C';  gradeColor = 'bg-amber-100 text-amber-800 border-amber-200'; }
+    else if (cappedTotal >= 50) { grade = 'D';  gradeColor = 'bg-orange-100 text-orange-800 border-orange-200'; }
+
+    return { score: cappedTotal, grade, gradeColor };
+  }, [simulatedMargin, simulatedRevenue, simulatedStockIssues, simulatedStaffRating, simulatedAuditScore, simulatedOrders]);
+
+  // Franchise Benchmarking Outliers Memo
+  const outliers = useMemo(() => {
+    if (!intelligenceConsolidated || !intelligenceConsolidated.outlets || intelligenceConsolidated.outlets.length === 0) return null;
+    const list = intelligenceConsolidated.outlets;
+    
+    let maxRev = list[0], maxMargin = list[0], maxAudit = list[0], minHealth = list[0];
+    list.forEach((o: any) => {
+      if (o.agentOutputs.sales.revenue > maxRev.agentOutputs.sales.revenue) maxRev = o;
+      if (o.agentOutputs.sales.margin > maxMargin.agentOutputs.sales.margin) maxMargin = o;
+      if (o.agentOutputs.audit.avgScore > maxAudit.agentOutputs.audit.avgScore) maxAudit = o;
+      if (o.healthScore < minHealth.healthScore) minHealth = o;
+    });
+
+    return { maxRev, maxMargin, maxAudit, minHealth };
+  }, [intelligenceConsolidated]);
 
   const handleToggleSelectLocation = (id: number) => {
     setSelectedLocationIds((prev) =>
@@ -3074,8 +3165,639 @@ export default function OperationsDashboard() {
             </div>
           )}
 
-          {/* OTHER STEPS (1, 2, 8, 9, 10) Rendering within section */}
-          {![3, 4, 5, 6, 7].includes(activeStepId) && (
+          {/* STEP 8: FRANCHISE INTELLIGENCE ENGINE */}
+          {activeStepId === 8 && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+
+              {/* Sub-Tab Nav Bar */}
+              <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap gap-2">
+                <button onClick={() => setIntelligenceSubTab("overview")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "overview" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>🧠 Command Center</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("health")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "health" ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>💚 Health Score Engine</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("risks")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "risks" ? "bg-rose-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>⚠️ Risk Prediction {intelligenceRisks ? `(${intelligenceRisks.summary?.critical ?? 0} Critical)` : ""}</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("opportunities")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "opportunities" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>📈 Growth Opportunities {intelligenceOpportunities ? `(${intelligenceOpportunities.summary?.total ?? 0})` : ""}</span>
+                </button>
+                <button onClick={() => setIntelligenceSubTab("recommendations")} className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${intelligenceSubTab === "recommendations" ? "bg-violet-600 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                  <span>🎯 Strategic Recommendations {intelligenceRecommendations ? `(${intelligenceRecommendations.summary?.total ?? 0})` : ""}</span>
+                </button>
+              </div>
+
+              {/* Loading State */}
+              {intelligenceLoading && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-12 flex flex-col items-center space-y-4">
+                  <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center animate-pulse">
+                    <Icons.Intelligence />
+                  </div>
+                  <p className="text-sm font-bold text-slate-700">Intelligence Engine Processing…</p>
+                  <p className="text-xs text-slate-400">Consolidating outputs from all agents</p>
+                  <div className="w-64 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full animate-pulse" style={{ width: "70%" }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── 1. COMMAND CENTER OVERVIEW ─────────────────────── */}
+              {intelligenceSubTab === "overview" && !intelligenceLoading && intelligenceConsolidated && (
+                <div className="space-y-4">
+                  {/* Network Summary KPI Banner */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Network Health Score</span>
+                      <div className="text-2xl font-black mt-1" style={{ color: intelligenceConsolidated.networkSummary.avgHealthScore >= 75 ? "#10b981" : intelligenceConsolidated.networkSummary.avgHealthScore >= 55 ? "#f59e0b" : "#ef4444" }}>
+                        {intelligenceConsolidated.networkSummary.avgHealthScore}<span className="text-sm font-semibold text-slate-400">/100</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.totalOutlets} outlets monitored</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Total Network Revenue</span>
+                      <div className="text-xl font-black text-slate-900 mt-1">₹{(intelligenceConsolidated.networkSummary.totalRevenue / 100000).toFixed(1)}L</div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Profit: ₹{(intelligenceConsolidated.networkSummary.totalProfit / 100000).toFixed(1)}L</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Stock Risk Alerts</span>
+                      <div className="text-xl font-black text-amber-600 mt-1">{intelligenceConsolidated.networkSummary.criticalStockAlerts + intelligenceConsolidated.networkSummary.lowStockAlerts}</div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.criticalStockAlerts} critical · {intelligenceConsolidated.networkSummary.lowStockAlerts} low</span>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Marketing ROAS</span>
+                      <div className={`text-xl font-black mt-1 ${intelligenceConsolidated.networkSummary.marketingRoas >= 2 ? "text-emerald-600" : intelligenceConsolidated.networkSummary.marketingRoas >= 1 ? "text-indigo-600" : "text-rose-600"}`}>
+                        {intelligenceConsolidated.networkSummary.marketingRoas}x
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{intelligenceConsolidated.networkSummary.totalCampaigns} active campaigns</span>
+                    </div>
+                  </div>
+
+
+
+                  {/* Per-Outlet Consolidated Matrix */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Consolidated Agent Outputs Matrix</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Cross-agent data aggregated per franchise outlet</p>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400">{intelligenceConsolidated.outlets.length} outlets</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Outlet</th>
+                            <th className="px-4 py-3 text-center">Health</th>
+                            <th className="px-4 py-3 text-right">Revenue</th>
+                            <th className="px-4 py-3 text-center">Margin</th>
+                            <th className="px-4 py-3 text-center">Inventory</th>
+                            <th className="px-4 py-3 text-center">Staff Avg</th>
+                            <th className="px-4 py-3 text-center">Audit %</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {intelligenceConsolidated.outlets.map((o: any) => (
+                            <tr key={o.outletId} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{o.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{o.city} · Mgr: {o.manager}</div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center space-x-1.5">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs" style={{ background: o.healthScore >= 75 ? "rgba(16,185,129,0.15)" : o.healthScore >= 55 ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)", color: o.healthScore >= 75 ? "#059669" : o.healthScore >= 55 ? "#d97706" : "#dc2626" }}>
+                                    {o.healthScore}
+                                  </div>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${o.gradeColor}`}>{o.grade}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-slate-800">₹{(o.agentOutputs.sales.revenue / 100000).toFixed(1)}L</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.sales.margin >= 30 ? "text-emerald-600" : o.agentOutputs.sales.margin >= 20 ? "text-indigo-600" : "text-rose-600"}`}>{o.agentOutputs.sales.margin}%</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {o.agentOutputs.inventory.criticalStock > 0 ? (
+                                  <span className="text-rose-600 font-bold">{o.agentOutputs.inventory.criticalStock} 🔴</span>
+                                ) : o.agentOutputs.inventory.lowStock > 0 ? (
+                                  <span className="text-amber-600 font-bold">{o.agentOutputs.inventory.lowStock} ⚠️</span>
+                                ) : (
+                                  <span className="text-emerald-600 font-bold">✓ OK</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.staff.avgRating >= 4.2 ? "text-emerald-600" : o.agentOutputs.staff.avgRating >= 3.5 ? "text-indigo-600" : "text-rose-600"}`}>{o.agentOutputs.staff.avgRating}/5</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-bold ${o.agentOutputs.audit.passRate >= 75 ? "text-emerald-600" : o.agentOutputs.audit.passRate >= 50 ? "text-amber-600" : "text-rose-600"}`}>{o.agentOutputs.audit.passRate}%</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Benchmark Outliers & Health Score Simulator Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {/* Performance Benchmarks Card */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 lg:col-span-1 flex flex-col justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Network Performance Benchmarks</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5 mb-4">Top and bottom multi-dimensional outliers</p>
+                        
+                        {outliers && (
+                          <div className="space-y-3.5">
+                            <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100 flex items-center space-x-3">
+                              <span className="text-2xl">🏆</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-800">Revenue Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxRev.outletName}</div>
+                                <div className="text-[10px] text-slate-500">₹{(outliers.maxRev.agentOutputs.sales.revenue / 100000).toFixed(1)}L Gross Revenue</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-sky-50/50 rounded-xl border border-sky-100 flex items-center space-x-3">
+                              <span className="text-2xl">📈</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-sky-800">Margin Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxMargin.outletName}</div>
+                                <div className="text-[10px] text-slate-500">{outliers.maxMargin.agentOutputs.sales.margin}% operating margin</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-violet-50/50 rounded-xl border border-violet-100 flex items-center space-x-3">
+                              <span className="text-2xl">📋</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-violet-800">Audit Champion</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.maxAudit.outletName}</div>
+                                <div className="text-[10px] text-slate-500">{outliers.maxAudit.agentOutputs.audit.avgScore}/100 audit score</div>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 flex items-center space-x-3">
+                              <span className="text-2xl">⚠️</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] uppercase font-bold tracking-wider text-rose-800">Needs Support</div>
+                                <div className="text-xs font-bold text-slate-800 truncate">{outliers.minHealth.outletName}</div>
+                                <div className="text-[10px] text-rose-500 font-medium">Health Score: {outliers.minHealth.healthScore} ({outliers.minHealth.grade})</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Franchise Health Score Simulator */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">Franchise Health Score Simulator</h3>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Simulate how KPIs affect Health Score & Grade in real-time</p>
+                        </div>
+                        
+                        {/* Selector to load outlet values */}
+                        <select 
+                          className="text-[11px] font-medium border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={simulatedOutletId || ""}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setSimulatedOutletId(val);
+                            const found = intelligenceConsolidated.outlets.find((o: any) => o.outletId === val);
+                            if (found) {
+                              setSimulatedRevenue(found.agentOutputs.sales.revenue);
+                              setSimulatedMargin(found.agentOutputs.sales.margin);
+                              setSimulatedStockIssues(found.agentOutputs.inventory.criticalStock + found.agentOutputs.inventory.lowStock);
+                              setSimulatedStaffRating(found.agentOutputs.staff.avgRating);
+                              setSimulatedAuditScore(found.agentOutputs.audit.avgScore || 75);
+                              setSimulatedOrders(found.agentOutputs.sales.orders);
+                            }
+                          }}
+                        >
+                          {intelligenceConsolidated.outlets.map((o: any) => (
+                            <option key={o.outletId} value={o.outletId}>Load: {o.outletName}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-4">
+                        {/* Sliders panel */}
+                        <div className="md:col-span-2 space-y-3">
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Gross Revenue</span>
+                              <span className="font-bold text-slate-800">₹{(simulatedRevenue / 100000).toFixed(1)}L</span>
+                            </div>
+                            <input 
+                              type="range" min="100000" max="1500000" step="50000"
+                              value={simulatedRevenue}
+                              onChange={(e) => setSimulatedRevenue(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Operating Profit Margin</span>
+                              <span className="font-bold text-slate-800">{simulatedMargin}%</span>
+                            </div>
+                            <input 
+                              type="range" min="0" max="50" step="1"
+                              value={simulatedMargin}
+                              onChange={(e) => setSimulatedMargin(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[11px] font-medium text-slate-600 mb-1">
+                              <span>Stock Shortages (Low / Critical)</span>
+                              <span className="font-bold text-slate-800">{simulatedStockIssues} items</span>
+                            </div>
+                            <input 
+                              type="range" min="0" max="10" step="1"
+                              value={simulatedStockIssues}
+                              onChange={(e) => setSimulatedStockIssues(parseInt(e.target.value, 10))}
+                              className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <div className="flex justify-between text-[10px] font-medium text-slate-600 mb-1">
+                                <span>Staff Rating</span>
+                                <span className="font-bold text-slate-800">{simulatedStaffRating}/5</span>
+                              </div>
+                              <input 
+                                type="range" min="1" max="5" step="0.1"
+                                value={simulatedStaffRating}
+                                onChange={(e) => setSimulatedStaffRating(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[10px] font-medium text-slate-600 mb-1">
+                                <span>Audit Score</span>
+                                <span className="font-bold text-slate-800">{simulatedAuditScore}%</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="100" step="1"
+                                value={simulatedAuditScore}
+                                onChange={(e) => setSimulatedAuditScore(parseInt(e.target.value, 10))}
+                                className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visual output panel */}
+                        <div className="md:col-span-1 bg-slate-50 rounded-2xl border border-slate-100 p-4 flex flex-col items-center justify-center text-center">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Simulated Score</span>
+                          
+                          <div className="relative flex items-center justify-center mt-3 mb-2">
+                            {/* Inner circle with values */}
+                            <div className="w-24 h-24 rounded-full bg-white border border-slate-100 shadow-xs flex flex-col items-center justify-center">
+                              <span className="text-3xl font-black text-slate-800">{simulatedHealthScore.score}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border mt-1.5 ${simulatedHealthScore.gradeColor}`}>
+                                Grade {simulatedHealthScore.grade}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] font-medium text-slate-500 leading-normal mt-1">
+                            {simulatedHealthScore.score >= 80 ? (
+                              <span className="text-emerald-600 font-semibold">Healthy performance & high standards. Ready for expansion.</span>
+                            ) : simulatedHealthScore.score >= 60 ? (
+                              <span className="text-indigo-600 font-semibold">Moderately healthy. Focus on inventory and audit compliance to raise score.</span>
+                            ) : (
+                              <span className="text-rose-600 font-bold">Needs critical support! Urgently audit cost structure and compliance gaps.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 2. HEALTH SCORE ENGINE ─────────────────────────── */}
+              {intelligenceSubTab === "health" && !intelligenceLoading && intelligenceHealthScores.length > 0 && (
+                <div className="space-y-4">
+                  {/* Summary Row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { label: "Avg Network Score", val: Math.round(intelligenceHealthScores.reduce((s, o) => s + o.healthScore, 0) / (intelligenceHealthScores.length || 1)), unit: "/100", color: "text-indigo-600" },
+                      { label: "Excellent (≥80)", val: intelligenceHealthScores.filter(o => o.healthScore >= 80).length, unit: " outlets", color: "text-emerald-600" },
+                      { label: "At Risk (50–64)", val: intelligenceHealthScores.filter(o => o.healthScore >= 50 && o.healthScore < 65).length, unit: " outlets", color: "text-amber-600" },
+                      { label: "Critical (<50)", val: intelligenceHealthScores.filter(o => o.healthScore < 50).length, unit: " outlets", color: "text-rose-600" },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <span className="text-xs text-slate-500 font-medium">{s.label}</span>
+                        <div className={`text-2xl font-black mt-1 ${s.color}`}>{s.val}<span className="text-sm font-semibold text-slate-400">{s.unit}</span></div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bar Chart */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
+                    <h3 className="text-sm font-bold text-slate-900">Composite Health Score by Outlet</h3>
+                    <p className="text-xs text-slate-500">Weighted across Financial (35%), Operational (25%), Compliance (20%), Marketing (20%)</p>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={intelligenceHealthScores} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="city" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <Tooltip formatter={(v: any) => [`${v}/100`, "Health Score"]} labelFormatter={(l) => `Outlet: ${l}`} />
+                          <Bar dataKey="healthScore" radius={[6, 6, 0, 0]} fill="#4f46e5"
+                            label={{ position: "top", fontSize: 10, fill: "#475569", fontWeight: "bold" }} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Score Breakdown Table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100">
+                      <h3 className="text-sm font-bold text-slate-900">Score Component Breakdown</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Individual KPI contribution per outlet (out of max points)</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Outlet</th>
+                            <th className="px-4 py-3 text-center">Total</th>
+                            <th className="px-4 py-3 text-center">Grade</th>
+                            <th className="px-4 py-3 text-center">Financial /35</th>
+                            <th className="px-4 py-3 text-center">Revenue /10</th>
+                            <th className="px-4 py-3 text-center">Inventory /15</th>
+                            <th className="px-4 py-3 text-center">Staff /10</th>
+                            <th className="px-4 py-3 text-center">Compliance /20</th>
+                            <th className="px-4 py-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {intelligenceHealthScores.map((o: any) => (
+                            <tr key={o.outletId} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{o.outletName}</div>
+                                <div className="text-[10px] text-slate-400">{o.city}</div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="font-black text-sm" style={{ color: o.healthScore >= 75 ? "#059669" : o.healthScore >= 55 ? "#d97706" : "#dc2626" }}>{o.healthScore}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${o.gradeColor}`}>{o.grade}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center space-x-1">
+                                  <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${(o.components.financial / 35) * 100}%` }} />
+                                  </div>
+                                  <span className="text-slate-600 w-6 text-right">{o.components.financial}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700 font-semibold">{o.components.revenue}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-semibold ${o.components.inventory >= 12 ? "text-emerald-600" : o.components.inventory >= 7 ? "text-amber-600" : "text-rose-600"}`}>{o.components.inventory}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center text-slate-700 font-semibold">{o.components.staff}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`font-semibold ${o.components.compliance >= 16 ? "text-emerald-600" : o.components.compliance >= 12 ? "text-amber-600" : "text-rose-600"}`}>{o.components.compliance}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`text-[10px] font-bold ${o.trendColor}`}>{o.trend}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 3. RISK PREDICTION ENGINE ──────────────────────── */}
+              {intelligenceSubTab === "risks" && !intelligenceLoading && intelligenceRisks && (
+                <div className="space-y-4">
+                  {/* Risk Summary Stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {[
+                      { label: "Critical Risks", val: intelligenceRisks.summary.critical, bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", num: "text-rose-600" },
+                      { label: "High Risks", val: intelligenceRisks.summary.high, bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", num: "text-amber-600" },
+                      { label: "Medium Risks", val: intelligenceRisks.summary.medium, bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700", num: "text-yellow-600" },
+                      { label: "Total Identified", val: intelligenceRisks.summary.total, bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", num: "text-slate-800" },
+                    ].map((s) => (
+                      <div key={s.label} className={`${s.bg} p-4 rounded-2xl border ${s.border}`}>
+                        <span className={`text-xs font-bold ${s.text}`}>{s.label}</span>
+                        <div className={`text-3xl font-black mt-1 ${s.num}`}>{s.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Risk Cards */}
+                  <div className="space-y-3">
+                    {intelligenceRisks.risks.map((risk: any) => {
+                      const sev = risk.severity;
+                      const sevStyle = sev === "Critical"
+                        ? { border: "border-rose-200", bg: "bg-rose-50", badge: "bg-rose-100 text-rose-800 border-rose-300", icon: "🔴" }
+                        : sev === "High"
+                        ? { border: "border-amber-200", bg: "bg-amber-50", badge: "bg-amber-100 text-amber-800 border-amber-300", icon: "🟠" }
+                        : { border: "border-yellow-200", bg: "bg-yellow-50", badge: "bg-yellow-100 text-yellow-800 border-yellow-300", icon: "🟡" };
+
+                      return (
+                        <div key={risk.id} className={`bg-white rounded-2xl border ${sevStyle.border} shadow-xs overflow-hidden`}>
+                          <div className={`px-4 py-2 ${sevStyle.bg} border-b ${sevStyle.border} flex items-center justify-between`}>
+                            <div className="flex items-center space-x-2">
+                              <span>{sevStyle.icon}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sevStyle.badge}`}>{risk.severity}</span>
+                              <span className="text-[10px] font-semibold text-slate-600">{risk.type}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">{risk.city !== "All Outlets" ? `${risk.outletName} · ${risk.city}` : "🌐 Network-Wide"}</span>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            <h4 className="text-sm font-bold text-slate-900">{risk.title}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{risk.description}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              <div className="bg-rose-50 border border-rose-100 rounded-xl p-2.5 text-xs">
+                                <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wide block mb-1">Business Impact</span>
+                                <span className="text-slate-700 leading-relaxed">{risk.impact}</span>
+                              </div>
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-xs">
+                                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide block mb-1">Mitigation Action</span>
+                                <span className="text-slate-700 leading-relaxed">{risk.mitigation}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 4. GROWTH OPPORTUNITIES ────────────────────────── */}
+              {intelligenceSubTab === "opportunities" && !intelligenceLoading && intelligenceOpportunities && (
+                <div className="space-y-4">
+                  {/* Opportunity Summary */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Total Opportunities</span>
+                      <div className="text-2xl font-black text-indigo-600 mt-1">{intelligenceOpportunities.summary.total}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">High Priority</span>
+                      <div className="text-2xl font-black text-emerald-600 mt-1">{intelligenceOpportunities.summary.highPriority}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Medium Priority</span>
+                      <div className="text-2xl font-black text-amber-600 mt-1">{intelligenceOpportunities.summary.mediumPriority}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                      <span className="text-xs text-slate-500 font-medium">Est. Total Impact</span>
+                      <div className="text-lg font-black text-slate-900 mt-1">₹{(intelligenceOpportunities.summary.totalEstimatedImpact / 1000).toFixed(0)}K</div>
+                    </div>
+                  </div>
+
+                  {/* Opportunity Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {intelligenceOpportunities.opportunities.map((opp: any) => {
+                      const priStyle = opp.priority === "High"
+                        ? { border: "border-emerald-200", headerBg: "bg-emerald-50 border-b border-emerald-200", badge: "bg-emerald-100 text-emerald-800" }
+                        : opp.priority === "Medium"
+                        ? { border: "border-amber-200", headerBg: "bg-amber-50 border-b border-amber-200", badge: "bg-amber-100 text-amber-800" }
+                        : { border: "border-slate-200", headerBg: "bg-slate-50 border-b border-slate-200", badge: "bg-slate-100 text-slate-600" };
+
+                      return (
+                        <div key={opp.id} className={`bg-white rounded-2xl border ${priStyle.border} shadow-xs overflow-hidden`}>
+                          <div className={`px-4 py-2.5 ${priStyle.headerBg} flex items-center justify-between`}>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-base">{opp.icon}</span>
+                              <div>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${priStyle.badge}`}>{opp.priority} Priority</span>
+                                <span className="text-[10px] text-slate-500 ml-1.5">{opp.type}</span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">{opp.impactLabel}</span>
+                          </div>
+                          <div className="p-4 space-y-2.5">
+                            <h4 className="text-sm font-bold text-slate-900 leading-tight">{opp.title}</h4>
+                            <p className="text-xs text-slate-600 leading-relaxed">{opp.description}</p>
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5">
+                              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide block mb-1">Recommended Action</span>
+                              <span className="text-xs text-slate-700 leading-relaxed">{opp.action}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                              <span>{opp.outletName} · {opp.city}</span>
+                              <span className="font-semibold text-slate-500">{opp.category}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {intelligenceOpportunities.opportunities.length === 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-10 text-center space-y-3">
+                      <div className="text-4xl">✅</div>
+                      <p className="text-sm font-bold text-slate-700">All outlets are operating near-optimally</p>
+                      <p className="text-xs text-slate-400">No significant growth gaps detected at this time.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── 5. STRATEGIC RECOMMENDATIONS ──────────────────── */}
+              {intelligenceSubTab === "recommendations" && !intelligenceLoading && intelligenceRecommendations && (
+                <div className="space-y-4">
+                  {/* Summary Strip */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-wrap items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900">Strategic Recommendation Engine</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Prioritized actions ranked by urgency × impact across all outlets</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs shrink-0">
+                      <div className="flex items-center space-x-1.5 bg-rose-50 border border-rose-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span className="font-bold text-rose-700">P1 Critical: {intelligenceRecommendations.summary.p1}</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        <span className="font-bold text-amber-700">P2 High: {intelligenceRecommendations.summary.p2}</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="font-bold text-blue-700">P3 Medium: {intelligenceRecommendations.summary.p3}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommendation Cards */}
+                  <div className="space-y-3">
+                    {intelligenceRecommendations.recommendations.map((rec: any, idx: number) => (
+                      <div key={rec.id} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                        {/* Card Header */}
+                        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-[10px] font-black text-slate-400 w-5">{String(idx + 1).padStart(2, "0")}</span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${rec.priorityColor}`}>{rec.priority} · {rec.priorityLabel}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-semibold">{rec.category}</span>
+                          </div>
+                          <div className="flex items-center space-x-2 text-[10px]">
+                            {rec.affectedOutlets.map((o: any) => (
+                              <span key={o.id ?? 0} className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{o.name} · {o.city}</span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Card Body */}
+                        <div className="p-5 space-y-3">
+                          <div className="flex items-start space-x-3">
+                            <span className="text-xl shrink-0">{rec.icon}</span>
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-900">{rec.title}</h4>
+                              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{rec.rationale}</p>
+                            </div>
+                          </div>
+
+                          {/* Action Checklist */}
+                          <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Action Plan</span>
+                            {rec.actions.map((action: string, i: number) => (
+                              <div key={i} className="flex items-start space-x-2 text-xs">
+                                <span className="text-indigo-500 font-black mt-0.5 shrink-0">{i + 1}.</span>
+                                <span className="text-slate-700 leading-relaxed">{action}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Estimated Impact */}
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center space-x-2">
+                            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide shrink-0">Estimated Impact:</span>
+                            <span className="text-xs text-emerald-800 font-semibold leading-relaxed">{rec.estimatedImpact}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {intelligenceRecommendations.recommendations.length === 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-10 text-center space-y-3">
+                      <div className="text-4xl">🏆</div>
+                      <p className="text-sm font-bold text-slate-700">Network is performing excellently</p>
+                      <p className="text-xs text-slate-400">No critical or high-priority interventions required at this time.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* OTHER STEPS (1, 2, 9, 10) Rendering within section */}
+          {![3, 4, 5, 6, 7, 8].includes(activeStepId) && (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
                 <Icons.Workflow />
@@ -3096,6 +3818,7 @@ export default function OperationsDashboard() {
               </div>
             </div>
           )}
+
 
         </main>
       </div>

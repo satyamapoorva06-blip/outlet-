@@ -12,13 +12,17 @@ from sklearn.ensemble import RandomForestRegressor
 
 def load_input_data():
     try:
-        # Read from stdin
-        input_data = sys.stdin.read()
+        if len(sys.argv) > 2:
+            with open(sys.argv[2], 'r', encoding='utf-8') as f:
+                input_data = f.read()
+        else:
+            input_data = sys.stdin.read()
+            
         if not input_data.strip():
             return {}
         return json.loads(input_data)
     except Exception as e:
-        print(json.dumps({"error": f"Failed to parse stdin: {str(e)}"}))
+        print(json.dumps({"error": f"Failed to parse input: {str(e)}"}))
         sys.exit(1)
 
 def run_segmentation(data):
