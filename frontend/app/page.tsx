@@ -758,26 +758,7 @@ export default function OperationsDashboard() {
 
   const totalSalesPages = Math.ceil(totalSalesRecords / salesPageSize) || 1;
 
-  // ── Auth Loading Guard ────────────────────────────────────────────────────
-  if (authLoading) {
-    return (
-      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="relative">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center font-black text-white text-2xl shadow-lg shadow-indigo-500/30">
-            FO
-          </div>
-          <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
-        </div>
-        <div className="text-center space-y-1">
-          <p className="text-white font-semibold text-sm">Loading your workspace…</p>
-          <p className="text-slate-500 text-xs">Verifying session</p>
-        </div>
-        <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
-          <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: "60%" }} />
-        </div>
-      </div>
-    );
-  }
+  // ── Render Dashboard Immediately ──────────────────────────────────────────
 
   return (
     <div className="h-screen overflow-hidden bg-slate-100 flex flex-col font-sans text-slate-900">
