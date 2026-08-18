@@ -20,6 +20,7 @@ import {
 import MapComponent from "./components/MapComponent";
 import CompareModal from "./components/CompareModal";
 import AuthModal from "./components/AuthModal";
+import PdfReportModal from "./components/PdfReportModal";
 import { useAuth } from "./context/AuthContext";
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
@@ -249,6 +250,7 @@ export default function OperationsDashboard() {
   const [selectedOutlet, setSelectedOutlet] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
   const [performanceSubTab, setPerformanceSubTab] = useState<"overview" | "map" | "health" | "underperforming" | "logs">("overview");
   const [inventorySubTab, setInventorySubTab] = useState<"roster" | "ai" | "reorders">("roster");
@@ -801,6 +803,16 @@ export default function OperationsDashboard() {
                 ))}
               </select>
             </div>
+
+            <button
+              onClick={() => setIsPdfModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 border border-indigo-400/30"
+            >
+              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Export PDF Report</span>
+            </button>
 
             {currentUser ? (
               <div className="flex items-center space-x-3 bg-slate-800/80 px-3.5 py-1.5 rounded-2xl border border-slate-700">
@@ -3818,6 +3830,14 @@ export default function OperationsDashboard() {
         isOpen={isCompareModalOpen}
         onClose={() => setIsCompareModalOpen(false)}
         selectedLocationIds={selectedLocationIds}
+      />
+
+      {/* Executive PDF & Print Audit Report Modal */}
+      <PdfReportModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        metrics={summary || { grossRevenue: 2495334, operatingCost: 1297325, netProfit: 1198008, profitMargin: 48.01, totalOrders: 14199, totalCustomers: 15200, averageOrderValue: 175.73 }}
+        selectedOutletName={outlets.find(o => String(o.id) === selectedOutlet)?.outlet_name || "All Franchise Outlets"}
       />
     </div>
   );

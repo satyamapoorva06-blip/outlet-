@@ -1,0 +1,27 @@
+services:
+  # Express REST API Backend Web Service
+  - type: web
+    name: franchiseops-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+
+  # Next.js 16 Operations Dashboard Frontend
+  - type: web
+    name: franchiseops-frontend
+    env: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: franchiseops-backend
+          property: host
