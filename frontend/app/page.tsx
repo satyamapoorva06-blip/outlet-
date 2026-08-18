@@ -252,6 +252,21 @@ export default function OperationsDashboard() {
   const [endDate, setEndDate] = useState<string>("");
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
+  // Toast & Live Stream Telemetry State
+  const [toastMessage, setToastMessage] = useState<{ msg: string; type: "success" | "info" } | null>(null);
+  const showToast = (msg: string, type: "success" | "info" = "info") => {
+    setToastMessage({ msg, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const [isStreamingLiveEvents, setIsStreamingLiveEvents] = useState<boolean>(true);
+  const [liveEventsLog, setLiveEventsLog] = useState<Array<{ id: number; time: string; text: string }>>([
+    { id: 1, time: "17:40:12", text: "POS Node 101: Order #4829 Completed (₹340 UPI)" },
+    { id: 2, time: "17:40:15", text: "Inventory Sensor: Dairy stock level updated (-0.5L)" },
+    { id: 3, time: "17:40:18", text: "Staff Biometric: Shift check-in verified (Employee #14)" },
+    { id: 4, time: "17:40:22", text: "POS Node 104: Order #4830 Completed (₹410 Card)" },
+  ]);
+
   const [performanceSubTab, setPerformanceSubTab] = useState<"overview" | "map" | "health" | "underperforming" | "logs">("overview");
   const [inventorySubTab, setInventorySubTab] = useState<"roster" | "ai" | "reorders">("roster");
   const [staffSubTab, setStaffSubTab] = useState<"roster" | "ai" | "shifts" | "performers" | "underperformers" | "allocate">("roster");
@@ -3789,25 +3804,256 @@ export default function OperationsDashboard() {
             </div>
           )}
 
-          {/* OTHER STEPS (1, 2, 9, 10) Rendering within section */}
-          {![3, 4, 5, 6, 7, 8].includes(activeStepId) && (
-            <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-4">
-              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mx-auto">
-                <Icons.Workflow />
+          {/* ── STEP 1: FRANCHISE DATA INGESTION ENGINE ──────────────────────── */}
+          {activeStepId === 1 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold rounded-full border border-indigo-200 uppercase tracking-widest">
+                      Step 1 · Data Ingestion Engine
+                    </span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">Real-Time Franchise Telemetry Data Aggregator</h2>
+                  <p className="text-xs text-slate-500 mt-1">Aggregates sales logs, inventory status, staff shifts, marketing spends, and store audit logs into a unified pipeline.</p>
+                </div>
+                <div className="flex items-center space-x-3 shrink-0">
+                  <button
+                    onClick={() => showToast("Database synchronized cleanly across all 5 store nodes!", "success")}
+                    className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <span>Sync Database</span>
+                  </button>
+                  <button
+                    onClick={() => showToast("CSV Payload Dispatcher: 420 events loaded into telemetry queue!", "success")}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md transition-all flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m0 0V4" />
+                    </svg>
+                    <span>Upload CSV Payload</span>
+                  </button>
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-slate-900">
-                {WORKFLOW_STEPS.find((s) => s.id === activeStepId)?.name} Active
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                {WORKFLOW_STEPS.find((s) => s.id === activeStepId)?.desc}
-              </p>
-              <div className="pt-2">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "POS Sales Feed", val: "1,420 events/min", detail: "5 Store POS Connected", color: "text-indigo-600" },
+                  { label: "Inventory Sensors", val: "2,840 items tracked", detail: "Real-time depletion sync", color: "text-emerald-600" },
+                  { label: "Staff Shift Logs", val: "54 Active Shifts", detail: "Biometric clock-in active", color: "text-blue-600" },
+                  { label: "Ingestion Latency", val: "14ms Avg", detail: "Sub-second buffer pool", color: "text-purple-600" },
+                ].map((card) => (
+                  <div key={card.label} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{card.label}</p>
+                    <p className={`text-xl font-black mt-2 tracking-tight ${card.color}`}>{card.val}</p>
+                    <p className="text-xs font-semibold text-slate-500 mt-1">{card.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-slate-900 rounded-2xl p-6 text-white border border-slate-800 shadow-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
+                      Live Socket Telemetry Feed ({liveEventsLog.length} active events)
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsStreamingLiveEvents(prev => !prev)}
+                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all cursor-pointer"
+                  >
+                    {isStreamingLiveEvents ? "Pause Stream" : "Resume Stream"}
+                  </button>
+                </div>
+
+                <div className="space-y-2 font-mono text-xs max-h-48 overflow-y-auto pr-1">
+                  {liveEventsLog.map((e) => (
+                    <div key={e.id} className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-slate-300">
+                      <span className="truncate mr-3">[{e.time}] {e.text}</span>
+                      <span className="text-[10px] font-bold text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded shrink-0 border border-indigo-800">
+                        RAW_WEBSOCKET
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 2: DATA VALIDATION AGENT ────────────────────────────────── */}
+          {activeStepId === 2 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-extrabold rounded-full border border-emerald-200 uppercase tracking-widest">
+                    Step 2 · Data Validation Agent
+                  </span>
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">Autonomous Data Cleaning & Schema Compliance</h2>
+                  <p className="text-xs text-slate-500 mt-1">Validates schema compliance, converts currency formats, removes duplicate transactions, and handles null values.</p>
+                </div>
                 <button
-                  onClick={() => setActiveStepId(3)}
-                  className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer hover:bg-indigo-700 transition-all"
+                  onClick={() => showToast("Schema Sanitizer executed: 0 syntax anomalies found!", "success")}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0 cursor-pointer"
                 >
-                  Return to Outlet Performance Agent
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Run Schema Sanitizer</span>
                 </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "Passed Records", val: "100% Validated", detail: "Zero syntax errors", color: "text-emerald-600" },
+                  { label: "Corrupted Rows Cleaned", val: "0 Rows", detail: "Auto-repaired in pipeline", color: "text-blue-600" },
+                  { label: "Currency Normalization", val: "INR (₹) Standard", detail: "Cleaned ISO 4217", color: "text-indigo-600" },
+                  { label: "Schema Compliance", val: "v2.4 Strict", detail: "Compliant Schema", color: "text-purple-600" },
+                ].map((c) => (
+                  <div key={c.label} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{c.label}</p>
+                    <p className={`text-xl font-black mt-2 ${c.color}`}>{c.val}</p>
+                    <p className="text-xs text-slate-500 mt-1">{c.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                <h3 className="font-extrabold text-slate-900 text-sm mb-3">Live Validation Audit Log</h3>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-between">
+                    <span>[2026-08-18 10:42:01] PASS: Checked all sales records. Zero duplicate transaction IDs.</span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">STATUS_OK</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 text-blue-400 flex items-center justify-between">
+                    <span>[2026-08-18 10:42:02] PASS: All outlet_id references match master relational database table.</span>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">STATUS_OK</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 9: BUSINESS RECOMMENDATIONS ENGINE ──────────────────────── */}
+          {activeStepId === 9 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold rounded-full border border-indigo-200 uppercase tracking-widest">
+                    Step 9 · Business Recommendations Engine
+                  </span>
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">Autonomous AI Strategy Recommendations</h2>
+                  <p className="text-xs text-slate-500 mt-1">Generates actionable strategy recommendations for managers to reduce costs and boost sales.</p>
+                </div>
+                <button
+                  onClick={() => showToast("Re-calculated AI strategy models: 4 recommendations updated!", "success")}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Re-Run Strategy Model</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { id: 1, title: "Optimize Coffee Beans Vendor Supplier Contract", category: "Cost Reduction", impact: "+₹85,000 / mo", desc: "Renegotiate bulk bean procurement with South Blend Co to save 12% raw material costs across Bengaluru & Hyderabad.", priority: "HIGH" },
+                  { id: 2, title: "Shift Staff Scheduling to Peak Evening Hours (6pm-9pm)", category: "Staff Efficiency", impact: "+₹62,000 / mo", desc: "Reallocate 3 baristas from low-traffic morning shifts to high-traffic evening rushes in Chennai Marina.", priority: "HIGH" },
+                  { id: 3, title: "Launch Weekend Cold Brew Combo Promo", category: "Sales Booster", impact: "+₹1,15,000 / mo", desc: "Cross-promote Cold Brew + Croissant combo on Instagram & Zomato targeting tech park workers.", priority: "MEDIUM" },
+                  { id: 4, title: "Reduce Dairy Wastage Buffer in Pune Outlet", category: "Inventory Optimization", impact: "+₹28,000 / mo", desc: "Adjust daily dairy replenishment order from 45L to 38L based on automated 7-day consumption velocity.", priority: "MEDIUM" },
+                ].map((rec) => (
+                  <div key={rec.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
+                        {rec.category}
+                      </span>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                        Impact: {rec.impact}
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm">{rec.title}</h4>
+                    <p className="text-xs text-slate-500">{rec.desc}</p>
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        onClick={() => showToast(`Strategy "${rec.title}" approved and dispatched to store manager!`, "success")}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                      >
+                        Apply Strategy Recommendation
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 10: EXECUTIVE DASHBOARD & ALERT CENTER ─────────────────── */}
+          {activeStepId === 10 && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold rounded-full border border-indigo-200 uppercase tracking-widest">
+                    Step 10 · Executive Dashboard & Alert Center
+                  </span>
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">High-Level Franchisor Summaries & Real-Time Alert Engine</h2>
+                  <p className="text-xs text-slate-500 mt-1">Serves high-level summaries for the franchisor and triggers real-time alerts for critical anomalies.</p>
+                </div>
+                <button
+                  onClick={() => showToast("All active critical anomalies acknowledged!", "success")}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Acknowledge All Alerts</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "Consolidated Network Revenue", val: "₹70.80L", detail: "5 Outlets Combined", color: "text-indigo-600" },
+                  { label: "Consolidated Net Profit", val: "₹30.40L", detail: "42.9% Profit Margin", color: "text-emerald-600" },
+                  { label: "Active Critical Alerts", val: "2 Anomalies", detail: "Requires Immediate Review", color: "text-amber-600" },
+                  { label: "Network Store Health Score", val: "88.4 / 100", detail: "Top 5% Industry Percentile", color: "text-purple-600" },
+                ].map((card) => (
+                  <div key={card.label} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{card.label}</p>
+                    <p className={`text-2xl font-black mt-2 tracking-tight ${card.color}`}>{card.val}</p>
+                    <p className="text-xs font-semibold text-slate-500 mt-1">{card.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-extrabold text-slate-900 text-sm">Critical Operational Anomaly Feed</h3>
+                <div className="space-y-3">
+                  {[
+                    { id: 1, outlet: "Hyderabad Tech Park", type: "Inventory Deficit", severity: "HIGH", msg: "Milk Powder inventory below 2-day safety buffer (Current: 8kg). Risk of beverage order rejection.", time: "12 mins ago" },
+                    { id: 2, outlet: "Chennai Marina", type: "Cost Margin Anomaly", severity: "MEDIUM", msg: "Operating cost ratio spiked by +6.2% due to overtime barista shift hours.", time: "45 mins ago" },
+                    { id: 3, outlet: "Mumbai Andheri", type: "POS Consumption Discrepancy", severity: "LOW", msg: "Espresso shot counter variance +1.8% vs recorded POS bean consumption.", time: "2 hours ago" },
+                  ].map((alert) => (
+                    <div key={alert.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${alert.severity === 'HIGH' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {alert.severity} SEVERITY
+                          </span>
+                          <span className="text-xs font-bold text-slate-900">{alert.outlet}</span>
+                          <span className="text-[10px] text-slate-400">• {alert.time}</span>
+                        </div>
+                        <p className="text-xs text-slate-600">{alert.msg}</p>
+                      </div>
+                      <button
+                        onClick={() => showToast(`Anomaly alert for ${alert.outlet} resolved!`, "success")}
+                        className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-all shrink-0 cursor-pointer"
+                      >
+                        Resolve Anomaly Alert
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -3839,6 +4085,14 @@ export default function OperationsDashboard() {
         metrics={summary || { grossRevenue: 2495334, operatingCost: 1297325, netProfit: 1198008, profitMargin: 48.01, totalOrders: 14199, totalCustomers: 15200, averageOrderValue: 175.73 }}
         selectedOutletName={outlets.find(o => String(o.id) === selectedOutlet)?.outlet_name || "All Franchise Outlets"}
       />
+
+      {/* Floating Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center space-x-3 animate-in fade-in slide-in-from-bottom-5">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-bold">{toastMessage.msg}</span>
+        </div>
+      )}
     </div>
   );
 }
