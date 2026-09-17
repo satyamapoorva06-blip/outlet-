@@ -10,7 +10,7 @@ const { escalateNotification } = require('../services/escalationEngine');
 const { createActionPlan, toggleActionTask, verifyAndCloseActionPlan } = require('../services/actionPlanService');
 const { dispatchNotification } = require('../services/channelService');
 
-// ─── 1. Get Notifications with Search & Filters ──────────────────────────────
+// Get Notifications with Search & Filters
 router.get('/', async (req, res) => {
   try {
     const { filter, outlet_id, priority, search } = req.query;
@@ -60,7 +60,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ─── 2. Get Notification Summary (For Navbar Bell Badge) ─────────────────────
+// Get Notification Summary (For Navbar Bell Badge)
 router.get('/summary', async (req, res) => {
   try {
     const totalRes = await pool.query(`SELECT COUNT(*) as count FROM notifications`);
@@ -84,7 +84,7 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// ─── 3. Acknowledge Notification ─────────────────────────────────────────────
+// Acknowledge Notification
 router.post('/:id/acknowledge', async (req, res) => {
   try {
     const notificationId = parseInt(req.params.id, 10);
@@ -110,7 +110,7 @@ router.post('/:id/acknowledge', async (req, res) => {
   }
 });
 
-// ─── 4. Escalate Notification ────────────────────────────────────────────────
+// Escalate Notification
 router.post('/:id/escalate', async (req, res) => {
   try {
     const notificationId = parseInt(req.params.id, 10);
@@ -132,7 +132,7 @@ router.post('/:id/escalate', async (req, res) => {
   }
 });
 
-// ─── 5. Resolve Notification ─────────────────────────────────────────────────
+// Resolve Notification
 router.post('/:id/resolve', async (req, res) => {
   try {
     const notificationId = parseInt(req.params.id, 10);
@@ -162,7 +162,7 @@ router.post('/:id/resolve', async (req, res) => {
   }
 });
 
-// ─── 6. Get Notification Details (Full Trace View) ───────────────────────────
+// Get Notification Details (Full Trace View)
 router.get('/:id/details', async (req, res) => {
   try {
     const notificationId = parseInt(req.params.id, 10);
@@ -229,7 +229,7 @@ router.get('/:id/details', async (req, res) => {
   }
 });
 
-// ─── 7. Action Plans API ──────────────────────────────────────────────────────
+// Action Plans API
 router.get('/action-plans', async (req, res) => {
   try {
     const plansRes = await pool.query(
@@ -296,7 +296,7 @@ router.put('/action-plans/:id/verify-close', async (req, res) => {
   }
 });
 
-// ─── 8. Analytics API for Management Dashboard ───────────────────────────────
+// Analytics API for Management Dashboard
 router.get('/analytics', async (req, res) => {
   try {
     const totalSentRes = await pool.query('SELECT COUNT(*) as count FROM notifications');
@@ -352,7 +352,7 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
-// ─── 9. DEMO SCENARIO: Trigger Critical Stock Shortage Pipeline ──────────────
+// Trigger Critical Stock Shortage Pipeline
 router.post('/demo-trigger', async (req, res) => {
   try {
     const { outletId = 1, itemName = 'Premium Coffee Beans', currentStock = 2, minThreshold = 25, unit = 'kg' } = req.body;
@@ -383,7 +383,7 @@ router.post('/demo-trigger', async (req, res) => {
   }
 });
 
-// ─── 10. DEMO SCENARIO: Simulate 30-Min SLA Timeout & Manager Escalation ─────
+// Simulate 30-Min SLA Timeout & Manager Escalation
 router.post('/demo-timeout-simulate', async (req, res) => {
   try {
     const { notificationId } = req.body;
@@ -423,7 +423,7 @@ router.post('/demo-timeout-simulate', async (req, res) => {
   }
 });
 
-// ─── 11. Audit Logs API ───────────────────────────────────────────────────────
+// Audit Logs API
 router.get('/audit-logs', async (req, res) => {
   try {
     const logsRes = await pool.query(
@@ -438,7 +438,7 @@ router.get('/audit-logs', async (req, res) => {
   }
 });
 
-// ─── 13. AI Routing Rules ──────────────────────────────────────────────────
+// AI Routing Rules
 router.get('/rules', async (req, res) => {
   try {
     const rules = await pool.query(`SELECT * FROM notification_rules ORDER BY id ASC`);
@@ -468,7 +468,7 @@ router.put('/rules/:id', async (req, res) => {
   }
 });
 
-// ─── 14. Notification Preferences ──────────────────────────────────────────
+// Notification Preferences
 router.get('/preferences', async (req, res) => {
   try {
     const userId = req.user?.id || 1; // Default to admin for demo
@@ -519,7 +519,7 @@ router.put('/preferences', async (req, res) => {
   }
 });
 
-// ─── 15. Raw Business Events ─────────────────────────────────────────────
+// Raw Business Events
 router.get('/events', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 20;
@@ -536,7 +536,7 @@ router.get('/events', async (req, res) => {
   }
 });
 
-// ─── 16. Manual Send Notification ──────────────────────────────────────────
+// Manual Send Notification
 router.post('/manual-send', async (req, res) => {
   try {
     const { outletId, title, message, severity, channels } = req.body;
@@ -590,7 +590,7 @@ router.post('/manual-send', async (req, res) => {
   }
 });
 
-// ─── 17. Real-World Action: Intra-Outlet Stock Transfer ───────────────────────
+// Real-World Action: Intra-Outlet Stock Transfer
 router.post('/stock-transfer', async (req, res) => {
   try {
     const { notificationId, actionPlanId, sourceOutletId, targetOutletId, itemName, quantity } = req.body;
@@ -646,7 +646,7 @@ router.post('/stock-transfer', async (req, res) => {
   }
 });
 
-// ─── 18. Real-World Action: Log Compliance & Temperature Proof ───────────────
+// Real-World Action: Log Compliance & Temperature Proof
 router.post('/compliance-proof', async (req, res) => {
   try {
     const { notificationId, actionPlanId, tempLog, inspectorNotes } = req.body;
@@ -684,7 +684,7 @@ router.post('/compliance-proof', async (req, res) => {
   }
 });
 
-// ─── 19. Real-World Action: Royalty Settlement ──────────────────────────────
+// Real-World Action: Royalty Settlement
 router.post('/settle-royalty', async (req, res) => {
   try {
     const { notificationId, actionPlanId, paymentRef, amount } = req.body;
@@ -721,7 +721,7 @@ router.post('/settle-royalty', async (req, res) => {
   }
 });
 
-// ─── 20. Trigger Real-World Franchise Scenarios ───────────────────────────────
+// Trigger Real-World Franchise Scenarios
 router.post('/realworld-trigger', async (req, res) => {
   try {
     const { scenarioType, outletId } = req.body;

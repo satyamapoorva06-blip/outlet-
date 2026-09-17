@@ -248,7 +248,7 @@ export default function OperationsDashboard() {
   const [comparisonTab, setComparisonTab] = useState<"Health" | "Revenue" | "Margin" | "Audit">("Health");
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Set<number>>(new Set());
 
-  // ── Auth: use global context, redirect if not authenticated ──
+  // Redirect to login if user is not authenticated
   const { currentUser, logout, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -848,7 +848,7 @@ export default function OperationsDashboard() {
 
   const totalSalesPages = Math.ceil(totalSalesRecords / salesPageSize) || 1;
 
-  // ── Auth Loading Guard ────────────────────────────────────────────────────
+  // Session loading guard
   if (authLoading) {
     return (
       <div className="h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
