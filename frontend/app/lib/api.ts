@@ -11,7 +11,7 @@ const api = axios.create({
   baseURL: BACKEND_URL,
 });
 
-// ── Request Interceptor: attach JWT ──────────────────────────────────────────
+// Attach JWT authentication token
 api.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
@@ -25,7 +25,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ── Response Interceptor: handle auth failures ───────────────────────────────
+// Handle unauthorized responses
 api.interceptors.response.use(
   (response) => response,
   (error) => {
